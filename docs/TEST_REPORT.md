@@ -17,3 +17,10 @@ Limitations: the existing automated suite does not yet test every new route, all
 - Automated tests: 9 test groups passed, 0 failed.
 - New coverage: learner mission/home data, weekly goal persistence, reminder preference persistence, career goals/applications, study group creation, referral attribution, and admin analytics authorization.
 - Not covered by automated tests: real browser visual/accessibility behavior on physical devices, production payment provider, external email/push delivery, reward redemption at checkout, scheduled notification worker, production backup restoration and live hosting configuration.
+
+## Skillora branding and course/revenue planning update — 2026-10-22
+- Backend syntax: passed (`node --check backend/server.js`).
+- Frontend syntax: passed (`node --check public/app.js`).
+- Automated API tests: 9 passed, 0 failed.
+- Added Skillora Academy branding, custom SVG shield logo, PWA manifest identity, seven-day bootcamp content standards, initial portfolio outcomes, and a revenue/learner growth plan.
+- Branding/docs update does not by itself implement a live payment-provider integration, email/push delivery, mentor staffing, employer partnerships, or full CV PDF generator. Those require separate implementation and/or real provider credentials and operations.

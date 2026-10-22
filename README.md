@@ -28,7 +28,7 @@ npm test
 npm start
 ```
 
-Open `http://localhost:3000`. The database defaults to `./data/skillforge.db`. For deployment, configure a persistent writable database path and set `COOKIE_SECURE=true` behind HTTPS.
+Open `http://localhost:3000`. The database defaults to `./data/skillora.db`. For deployment, configure a persistent writable database path and set `COOKIE_SECURE=true` behind HTTPS.
 
 Create the first administrator using the provided script:
 
