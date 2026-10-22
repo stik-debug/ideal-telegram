@@ -43,3 +43,29 @@ Run `npm test`, then test signup/login, locked paid lesson access, payment callb
 - QR images in certificate PDFs, external employer views with consent, full offline lesson sync, automated abuse moderation, and mentor/business partners who actually supply sessions or challenges.
 - Admin APIs exist for publishing clinics/challenges and reviewing reports/scholarships; the current admin screen does not yet expose every management workflow as a visual form. Use authenticated API tooling or complete that admin UI before handing these operations to nontechnical staff.
 - Production backup retention/off-site copy and a tested restore drill are operational requirements; the backup command creates a local verified snapshot but does not upload it off-site automatically.
+
+
+## Retention and learner growth suite (2026-10-22)
+
+### Implemented in source
+- Learner homepage API and dashboard panel with a persisted daily mission selected from actual incomplete lessons or portfolio work.
+- Learner weekly target and career goal preferences; milestone awards and learning-day/streak summary derived from persisted events.
+- Portfolio feedback endpoint with rubric scores and privacy checks for private projects.
+- Study group creation, membership listing, public-group joining and owner/admin member removal.
+- Weekly challenge publishing and submissions; admin-created challenges are real records and are not seeded.
+- Career goal and application tracker plus recommendations for published courses not yet enrolled in.
+- Notification preferences, quiet hours, in-app notification listing, learner benefits publishing/claiming, and dashboard forms.
+- Referral attribution at registration, qualifying payment attribution only after verified payment webhook, reward ledger, admin approval/rejection/reversal, and referral analytics. Reward creation is disabled by default unless `REFERRAL_REWARD_KES` is configured; shareable full links require `PUBLIC_URL`.
+- Retention analytics based on learning events, signups, referrals and actual course progress. Students are blocked from admin analytics.
+- Added tests for the retention suite; all 9 test groups pass locally.
+
+### Important limits / integration requirements
+- This package is not deployed. Live site and live database were not changed.
+- The homepage and learner workflows are exposed in the student dashboard, but study-group invitations and full group messaging are not implemented yet; public group joining is available.
+- Peer feedback is available for public portfolio projects; richer reporting/moderation UI and instructor assignment workflow need more work before large-scale public use.
+- Weekly challenges have submission endpoints and admin publishing API; scoring/review UI is still an admin workflow gap.
+- Referral rewards are pending admin review. Automatic credit redemption at checkout is not implemented. Configure a non-zero reward only after defining terms, refund windows, budget and a secure redemption process.
+- Notification preferences and in-app queue storage exist, but a production scheduler/worker and email/push provider adapters are still required for automatic delivery. No external messages are sent by this package.
+- Career recommendations are a transparent baseline (published courses not yet enrolled in), not an AI-based or labor-market-verified recommender. Career opportunities must be published from genuine sources.
+- Retention metrics currently use available event timestamps and the application's UTC date conventions. Before production, standardize timezone handling, add cohort-specific week-1/week-4 definitions, and audit data retention/privacy requirements.
+- No Swahili support was added.

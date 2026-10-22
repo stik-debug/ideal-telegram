@@ -105,3 +105,20 @@ Set `DB_FILE` to the persistent database path, then run `npm run backup`. It cre
 
 ### Explicit scope exclusion
 This build does not include Swahili-language support.
+
+
+## Retention and learner-growth features
+
+The learner dashboard includes a personalized daily mission, real course progress, weekly targets, career tracking, study group creation, benefits, reminder preferences, weekly challenge discovery, and a referral link panel. Authenticated APIs also support project peer feedback, weekly challenge submissions, and admin retention analytics.
+
+Useful endpoints:
+- `GET /api/learner/home`, `POST /api/learner/mission/:id/status`, `PUT /api/learner/goals`, `GET /api/learner/milestones`
+- `POST /api/portfolio/:id/feedback`, `GET /api/portfolio/:id/feedback`
+- `POST/GET /api/study-groups`, `POST /api/study-groups/:id/join`
+- `GET /api/weekly-challenges`, `POST /api/weekly-challenges/:id/submit`, admin `POST /api/admin/weekly-challenges`
+- `GET /api/career`, `POST /api/career/goals`, `POST /api/career/applications`, `PUT /api/career/applications/:id`
+- `GET/PUT /api/notification-preferences`, `GET /api/notifications`
+- Admin `POST /api/admin/benefits`; learner `GET /api/benefits`, `POST /api/benefits/:id/claim`
+- Admin `GET /api/admin/retention-analytics`, `GET /api/admin/referrals`, `PUT /api/admin/rewards/:id`
+
+Set `PUBLIC_URL` to the academy's public origin if you want complete referral links. `REFERRAL_REWARD_KES` defaults to `0` (disabled). Configure a reward only after publishing terms and implementing a complete redemption/settlement workflow. Email, browser push and automated scheduled reminders need provider/worker setup and are not active merely because preferences are saved.

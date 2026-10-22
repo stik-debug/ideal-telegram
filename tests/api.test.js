@@ -86,3 +86,25 @@ test('assignment upload, feedback, and private file access', async () => {
   assert.equal((await call(`/api/admin/assignments/${submit.j.id}/review`,'PUT',{status:'reviewed',feedback:'Good work'},admin)).s,200);
   assert.equal((await call('/api/assignments','GET',null,student)).j[0].instructor_feedback,'Good work');
 });
+
+test('retention suite: daily mission, goals, preferences, career, study groups and referral tracking', async () => {
+  const ownerId=Number(app.db.prepare("INSERT INTO users(email,name,pass_hash) VALUES('retention-owner@x.com','Owner',?)").run(hash('longpassword1')).lastInsertRowid); const ownerToken='owner-retention-token'; app.db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(ownerToken,ownerId,Date.now()+600000); const owner='sid='+ownerToken;
+  const ref = await call('/api/referral','GET',null,owner); assert.equal(ref.s,200); assert.ok(ref.j.code);
+  const referredId=Number(app.db.prepare("INSERT INTO users(email,name,pass_hash) VALUES('referred-retention@x.com','Referred learner',?)").run(hash('longpassword1')).lastInsertRowid); app.db.prepare('INSERT INTO sessions VALUES(?,?,?)').run('referred-retention-token',referredId,Date.now()+600000); app.db.prepare('INSERT INTO referral_attributions(referrer_id,referred_user_id,referral_code) VALUES(?,?,?)').run(ownerId,referredId,ref.j.code); app.db.prepare('INSERT INTO learner_goals(user_id) VALUES(?)').run(referredId); app.db.prepare('INSERT INTO notification_preferences(user_id) VALUES(?)').run(referredId); const referred='sid=referred-retention-token';
+  assert.equal(app.db.prepare('SELECT COUNT(*) n FROM referral_attributions WHERE referral_code=?').get(ref.j.code).n,1);
+  const home=await call('/api/learner/home','GET',null,referred);assert.equal(home.s,200);assert.ok(home.j.mission);assert.equal(home.j.weekly_target,3);
+  assert.equal((await call('/api/learner/goals','PUT',{weekly_target:4,career_goal:'Web developer'},referred)).s,200);
+  assert.equal((await call('/api/learner/home','GET',null,referred)).j.weekly_target,4);
+  assert.equal((await call('/api/notification-preferences','PUT',{in_app:false,quiet_start:'22:00',quiet_end:'07:00'},referred)).s,200);
+  const prefs=(await call('/api/notification-preferences','GET',null,referred)).j;assert.equal(prefs.in_app,0);assert.equal(prefs.email,0);assert.equal(prefs.quiet_start,'22:00');
+  assert.equal((await call('/api/study-groups','POST',{name:'Portfolio builders',description:'Weekly project practice',visibility:'public'},owner)).s,201);
+  const groups=(await call('/api/study-groups','GET',null,owner)).j;assert.equal(groups.length,1);
+  const career=await call('/api/career/goals','POST',{goal:'Become a web developer'},referred);assert.equal(career.s,201);
+  assert.equal((await call('/api/career/applications','POST',{organization:'Example Ltd',role_title:'Junior developer',source_url:'https://example.com/jobs'},referred)).s,201);
+  assert.equal((await call('/api/career','GET',null,referred)).j.applications.length,1);
+  assert.equal((await call('/api/benefits','GET',null,referred)).s,200);
+  assert.equal((await call('/api/admin/retention-analytics','GET',null,referred)).s,403);
+  app.db.prepare("INSERT INTO users(email,name,pass_hash,role) VALUES('retention-admin@x.com','Admin',?,'admin')").run(hash('adminpassword1'));
+  const admin=(await call('/api/login','POST',{email:'retention-admin@x.com',password:'adminpassword1'})).c;
+  const analytics=await call('/api/admin/retention-analytics','GET',null,admin);assert.equal(analytics.s,200);assert.ok('referrals' in analytics.j);
+});
