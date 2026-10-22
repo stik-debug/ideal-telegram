@@ -1,4 +1,4 @@
-# SkillForge Academy upgrade status
+# Skillora Academy upgrade status
 
 ## Implemented in this source package
 - Student portfolio projects, privacy default and opt-in public visibility.

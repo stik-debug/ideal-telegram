@@ -1,4 +1,4 @@
-# SkillForge Academy
+# Skillora Academy
 
 A Kenya-focused, affordable digital-skills learning platform built with Node.js and SQLite. The project includes a responsive course catalogue, student accounts, lessons, quizzes, progress tracking, a student dashboard, certificate issuance and downloadable PDF certificates.
 
@@ -69,7 +69,7 @@ See [`docs/KENYA_COURSE_CATALOGUE_AND_LAUNCH_PLAN.md`](docs/KENYA_COURSE_CATALOG
 
 - Admins can open **Admin dashboard** after signing in with an account whose role is `admin`. The dashboard includes summary counts, student/enrolment lists, course editing and lesson management, certificate listing, assignment feedback and support-ticket replies.
 - Learners can submit PDF, plain text, PNG/JPEG or ZIP assignments up to 500 KB, receive instructor feedback, and create/reply to support tickets from My learning.
-- Completion certificates are downloadable PDFs with unique verification codes at `/api/verify/:code`. They represent SkillForge Academy course completion only and are not accredited qualifications.
+- Completion certificates are downloadable PDFs with unique verification codes at `/api/verify/:code`. They represent Skillora Academy course completion only and are not accredited qualifications.
 - Read `docs/LAUNCH_CHECKLIST.md` before production release. Payment-provider integration still needs real provider configuration and sandbox validation before live transactions are enabled.
 
 ## Learner-outcome upgrade pack

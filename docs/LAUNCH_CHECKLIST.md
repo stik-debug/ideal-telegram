@@ -1,4 +1,4 @@
-# SkillForge Academy launch checklist
+# Skillora Academy launch checklist
 
 Use this checklist on the deployed staging site before accepting public payments. Automated tests are useful but do not replace provider sandbox tests and manual device checks.
 

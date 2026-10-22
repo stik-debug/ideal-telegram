@@ -1,8 +1,8 @@
-# SkillForge Academy: Kenya Course Catalogue & 30-Day Launch Plan
+# Skillora Academy: Kenya Course Catalogue & 30-Day Launch Plan
 
 ## Positioning
 
-**Learn a skill. Build something real. Put it to work.** SkillForge serves young learners who want job-ready portfolio projects and business owners who want practical digital skills. Sell outcomes and projects rather than vague promises. Never promise employment or income.
+**Learn a skill. Build something real. Put it to work.** Skillora serves young learners who want job-ready portfolio projects and business owners who want practical digital skills. Sell outcomes and projects rather than vague promises. Never promise employment or income.
 
 ## Suggested catalogue and introductory KSh prices
 
@@ -26,7 +26,7 @@ Prices are proposed launch hypotheses, not validated market averages. Test willi
 - A Kenyan digital-skills needs assessment identified gaps including digital marketing, data analytics, cybersecurity and automation: https://jointsdgfund.org/publication/new-needs-assessment-maps-kenyas-digital-skills-gap-msms-and-marginalized-communities
 - Kenya's ICT ministry describes national digital-skills efforts: https://ict.go.ke/digital-skills
 
-These sources justify testing the subjects; they do not prove that a specific SkillForge course will sell. Use paid conversions and learner completion to validate local demand.
+These sources justify testing the subjects; they do not prove that a specific Skillora course will sell. Use paid conversions and learner completion to validate local demand.
 
 ## Recommended first launch
 
