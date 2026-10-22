@@ -95,3 +95,13 @@ This build adds a learner portfolio (private by default, public only by opt-in),
 - `POST /api/ai-tutor`; `GET /api/achievements`; `GET /api/referral`
 - Admin `GET /api/admin/analytics`, `POST /api/admin/coupons`, `GET /api/admin/audit-log`, `POST /api/admin/certificates/:code/revoke`
 - `POST /api/coupons/validate`
+
+
+## Additional learner support and quality tools
+The upgraded source includes adaptive learning-path recommendations, mentor clinic booking, scholarship applications, business challenges, content safety reports, and a database-backed admin quality report. These are empty until real sessions, challenges, and decisions are entered; no fake opportunities or funded seats are seeded. The student dashboard exposes the learner workflows. Some administration workflows are API-only and need a visual admin interface before nontechnical staff can manage them.
+
+### Database backups
+Set `DB_FILE` to the persistent database path, then run `npm run backup`. It creates a consistent SQLite snapshot under `./backups` by default and checks its integrity. Set `BACKUP_DIR` to change the destination. Copy backups to secure off-site storage and test restoration; this command does not perform off-site replication.
+
+### Explicit scope exclusion
+This build does not include Swahili-language support.
