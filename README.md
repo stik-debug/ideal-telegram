@@ -122,3 +122,7 @@ Useful endpoints:
 - Admin `GET /api/admin/retention-analytics`, `GET /api/admin/referrals`, `PUT /api/admin/rewards/:id`
 
 Set `PUBLIC_URL` to the academy's public origin if you want complete referral links. `REFERRAL_REWARD_KES` defaults to `0` (disabled). Configure a reward only after publishing terms and implementing a complete redemption/settlement workflow. Email, browser push and automated scheduled reminders need provider/worker setup and are not active merely because preferences are saved.
+
+## Expanded career bootcamps
+
+The course catalogue now includes additional seven-lesson bootcamps in AI productivity and automation, cybersecurity foundations, spreadsheet data analysis, UX/UI design, e-commerce operations, small-business bookkeeping, project management, video editing, customer support and remote work, cloud/DevOps, freelancing, and no-code automation. Each lesson includes practical guidance, an exercise or deliverable, and a knowledge check; each course ends with a capstone. Seven days is a guided study format, not a guarantee of mastery or employment. Learners should complete the practical work and assessment before presenting a skill as job-ready.

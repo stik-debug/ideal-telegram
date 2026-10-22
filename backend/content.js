@@ -906,6 +906,1531 @@ module.exports = [
       {"title":"Improve campaigns using evidence","body":"Compare results over a consistent period and account for differences in spend, audience and offer. Change one major variable at a time where possible, and avoid drawing strong conclusions from a tiny sample. A high number of views may not produce sales, so connect attention metrics to business outcomes. Practice by reviewing a training campaign table and recommending one change with a reason and a measure to watch.","quiz":[{"q":"Which result is closest to a business outcome?","o":["A view with no further context","A qualified enquiry or completed sale","A decorative graphic","The number of emojis used"],"a":1,"e":"Qualified enquiries and sales are closer to the intended business goal."}]},
       {"title":"Capstone: 14-day campaign plan","body":"Prepare a 14-day campaign for a real business with permission or a clearly fictional case. Include the audience, offer, calendar, three sample creatives, calls to action, lead-tracking sheet and weekly review plan. State what is unknown and how results will be measured. Do not claim the campaign generated sales unless real tracking supports that statement. Deliver a concise report that a business owner can execute and evaluate.","quiz":[{"q":"What should a credible campaign report avoid?","o":["Stating the measurement period","Explaining limitations","Claiming results that were not measured","Listing the next experiment"],"a":2,"e":"Marketing results should be supported by actual observations."}]}
     ]
-  }
+  },
 
+  // Additional practical, seven-lesson career bootcamps
+  {
+    "slug": "ai-workflows",
+    "title": "AI Tools & Automation for Everyday Work",
+    "summary": "Use AI tools responsibly to research, draft, analyse information and automate repeatable tasks. Finish with a documented workflow portfolio.",
+    "price": 600,
+    "lessons": [
+      {
+        "title": "Choose the right AI task",
+        "body": "Start with a bounded task that has a clear output, such as summarising a public document, drafting an outline or classifying non-sensitive feedback. Compare the time, quality and risk of doing it manually versus with an AI assistant. Never paste passwords, private customer data or confidential employer material into an unapproved tool. Practice: write a task brief with input, output, success criteria and privacy constraints.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for ai productivity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Write clear prompts",
+        "body": "A useful prompt states the role or context, task, audience, constraints and output format. Provide relevant examples when allowed, ask the model to state assumptions and break complex tasks into stages. Iterate based on observable quality rather than adding vague adjectives. Practice: create three prompt versions for a customer FAQ draft and compare accuracy and usefulness.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for ai productivity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Verify claims and sources",
+        "body": "AI output can sound confident while being wrong. Check factual claims against authoritative sources, verify dates and calculations independently, and distinguish quotations from paraphrases. If evidence is missing, label uncertainty instead of inventing a source. Practice: audit a generated short report and create a claim-check table with evidence and corrections.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for ai productivity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Create repeatable workflows",
+        "body": "Map a process into trigger, inputs, steps, decision points, output and human review. Use templates and checklists before introducing automation. Keep a manual fallback and record failures. Practice: design a workflow that turns meeting notes into action items, owners and deadlines without sending messages automatically.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for ai productivity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Work with tables and documents",
+        "body": "Use AI to suggest spreadsheet formulas, categorise anonymised rows or draft a document structure, then test the result on known examples. Validate totals, formulas, formatting and edge cases. Practice: analyse a small clearly labelled practice dataset and write three findings with supporting calculations.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for ai productivity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Privacy, bias and responsible use",
+        "body": "Review whether the task affects people, money, employment or access to services. Avoid sensitive data, check for biased or unsupported conclusions and require human approval for consequential decisions. Follow workplace rules and disclose AI assistance when required. Practice: complete a risk checklist for an AI-assisted hiring or customer-support workflow.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for ai productivity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: useful AI workflow",
+        "body": "Deliver a workflow specification, reusable prompts, sample input/output, verification checklist, privacy notes and a short demonstration. Test it on several varied examples and document failures and improvements. Do not claim measured time savings without measuring them. Self-assess accuracy, usefulness, repeatability and safety.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for ai productivity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "cybersecurity-foundations",
+    "title": "Cybersecurity Foundations for Work",
+    "summary": "Learn everyday security, account protection, phishing awareness, safe device practices and incident response through defensive exercises.",
+    "price": 700,
+    "lessons": [
+      {
+        "title": "Threats and risk basics",
+        "body": "Cybersecurity protects confidentiality, integrity and availability. Assets include accounts, devices, files and business services; threats exploit weaknesses and risks depend on likelihood and impact. Practice: create a simple asset-and-risk register for a small business using non-sensitive example data.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cybersecurity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Secure accounts and access",
+        "body": "Use unique passwords stored in a reputable password manager, enable multifactor authentication and remove access that is no longer needed. Never share one-time codes. Apply least privilege: users receive only the access necessary for their work. Practice: write an account-hardening checklist for a new employee.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cybersecurity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Recognise phishing and scams",
+        "body": "Inspect sender identity, domain spelling, unexpected urgency, payment changes and suspicious attachments. Verify requests through a known independent channel rather than replying to the message. Do not open suspicious links to investigate them. Practice: annotate sample fictional messages and explain which warning signs require verification.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cybersecurity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Protect devices and networks",
+        "body": "Install security updates, use screen locks, encrypt devices where supported and avoid unknown software. Use trusted networks and approved VPNs when required; public Wi-Fi is not automatically safe for every task. Practice: prepare a device baseline checklist and a safe response to a lost phone.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cybersecurity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Data handling and backups",
+        "body": "Classify data, share only with authorised people, use approved storage and keep tested backups. A backup is useful only if restoration works. Practice: propose a backup schedule and recovery test for a small business, including who may access restored files.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cybersecurity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Respond to an incident",
+        "body": "Stop interacting with the suspicious item, report promptly through the organisation’s process, preserve relevant details and avoid deleting evidence. Do not investigate beyond your authorisation. Practice: write a first-hour response checklist for a suspected compromised account.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cybersecurity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: security awareness pack",
+        "body": "Create a one-page security guide, phishing triage checklist, account-protection checklist and incident reporting template. Use fictional examples only and explain when to contact an authorised IT or security professional.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cybersecurity work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "data-analysis-spreadsheets",
+    "title": "Spreadsheet Data Analysis & Reporting",
+    "summary": "Clean data, use formulas, summarise performance and build a clear decision-ready report with spreadsheets.",
+    "price": 700,
+    "lessons": [
+      {
+        "title": "Structure reliable data",
+        "body": "Keep one observation per row and one variable per column, use consistent dates and units, and avoid merged cells in raw tables. Preserve an untouched original and document the source. Practice: inspect a practice sales table and list structural issues before changing anything.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for data analysis work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Clean and validate records",
+        "body": "Find blanks, duplicates, inconsistent categories and impossible values. Decide how each issue should be handled and record the rule rather than silently deleting information. Practice: create a cleaning log and a validated version of a small fictional dataset.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for data analysis work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Use formulas confidently",
+        "body": "Learn relative and absolute references, IF, SUMIF/COUNTIF, lookup functions and error handling. Check formula results with a hand-calculated example and test boundary cases. Practice: calculate sales totals, average order value and outstanding amounts from a training sheet.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for data analysis work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Summarise with pivot tables",
+        "body": "Group records by category, period or location to answer a defined question. Check that filters and totals reconcile to the source data. Avoid presenting a chart without explaining its measure and time period. Practice: create a pivot summary of monthly sales by product category.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for data analysis work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Visualise the message",
+        "body": "Choose a chart based on the question: bars for comparisons, lines for trends and tables for precise values. Label axes, units and periods; avoid misleading scales and decorative clutter. Practice: build two charts and write one sentence describing what each supports.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for data analysis work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Interpret results responsibly",
+        "body": "Separate observation from explanation and recommendation. Correlation does not prove causation, and small samples can be misleading. Include limitations and avoid exposing personal information. Practice: write a short management note with three evidence-backed findings and one caveat.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for data analysis work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: decision report",
+        "body": "Deliver a cleaned workbook, documented formulas, summary table, two useful visuals and a one-page report. Include source notes, assumptions, validation checks and a recommendation tied directly to the evidence.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for data analysis work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "ux-ui-design-starter",
+    "title": "UX/UI Design: Research to Clickable Prototype",
+    "summary": "Practise user-centred design, wireframes, visual hierarchy, accessibility and prototype testing.",
+    "price": 700,
+    "lessons": [
+      {
+        "title": "Understand users and goals",
+        "body": "Define the audience, the problem and the task the interface must support. Use interviews or observations with consent; do not invent research findings. If no participants are available, label assumptions explicitly. Practice: write a problem statement and three research questions for a simple booking flow.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for design work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Map journeys and information",
+        "body": "List the steps users take, their questions and possible obstacles. Group information by user task, use familiar labels and keep navigation predictable. Practice: draw a user journey and a simple sitemap for a small service website.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for design work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Wireframes and hierarchy",
+        "body": "Start with low-fidelity layouts that prioritise content and task order before decoration. Make the main action obvious and keep forms focused. Practice: sketch mobile and desktop wireframes for a registration or booking page.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for design work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Visual systems and components",
+        "body": "Choose a small type scale, spacing system, colour palette and reusable components. Check contrast and avoid relying on colour alone to communicate status. Practice: create buttons, fields, alerts and cards with normal, hover, focus, disabled and error states.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for design work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Accessibility and responsive design",
+        "body": "Use readable text, keyboard-accessible controls, visible focus, meaningful labels and layouts that adapt to narrow screens. Consider touch targets and reduced-motion preferences. Practice: audit a prototype at mobile and desktop widths and record fixes.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for design work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Prototype and test",
+        "body": "Create a clickable path for the primary task and ask a few representative people to attempt it where possible. Observe hesitation and task failures instead of leading participants. Practice: write a test script, record findings with consent and prioritise issues by severity.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for design work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: prototype case study",
+        "body": "Deliver the problem statement, journey map, wireframes, component set, clickable prototype and usability findings. Clearly separate actual research from assumptions and explain what you changed based on evidence.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for design work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "ecommerce-store-operations",
+    "title": "E-commerce Store Setup & Operations",
+    "summary": "Plan a small online store, organise products, improve checkout clarity and track orders responsibly.",
+    "price": 700,
+    "lessons": [
+      {
+        "title": "Choose a viable product and audience",
+        "body": "Describe the customer problem, product range, fulfilment method and competitive alternatives. Validate interest through ethical interviews or small tests rather than assuming demand. Practice: create a product hypothesis and a low-cost validation plan.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for e-commerce work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Build product listings",
+        "body": "Write accurate titles, specifications, prices, delivery details and return terms. Use images you own or are licensed to use and never fabricate reviews or stock scarcity. Practice: prepare three consistent product listings with clear benefits and limitations.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for e-commerce work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Price and calculate margins",
+        "body": "Account for product cost, packaging, delivery, platform fees, taxes where applicable, returns and marketing costs. Revenue is not profit. Practice: calculate a sample unit margin and identify the minimum price needed to cover known costs, stating assumptions.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for e-commerce work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Design a trustworthy checkout",
+        "body": "Show the full cost before payment, explain delivery timing and returns, minimise unnecessary form fields and use a trusted payment provider. Never store raw card details yourself. Practice: review a mock checkout and write a list of trust and usability improvements.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for e-commerce work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Manage orders and fulfilment",
+        "body": "Track order ID, status, payment confirmation, stock, dispatch and customer communication. Reconcile orders against provider-confirmed payments and handle exceptions explicitly. Practice: design an order status workflow and customer update templates.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for e-commerce work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Customer service and returns",
+        "body": "Set realistic response times, document return conditions and handle complaints respectfully. Protect customer data and do not promise a refund before checking policy and payment status. Practice: draft responses to a delayed delivery, wrong item and refund request.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for e-commerce work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: store launch plan",
+        "body": "Deliver a mini catalogue, pricing worksheet, checkout checklist, fulfilment process, customer policies and a weekly metrics sheet. Use a test environment and clearly labelled sample products until real inventory and providers are configured.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for e-commerce work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "bookkeeping-small-business",
+    "title": "Small Business Bookkeeping Basics",
+    "summary": "Organise transactions, understand cash flow, reconcile records and prepare clear monthly summaries.",
+    "price": 700,
+    "lessons": [
+      {
+        "title": "Understand the records",
+        "body": "Separate business and personal transactions where possible and retain source documents. Track date, reference, description, category, amount and payment method. Practice: design a transaction log using fictional business examples.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for business finance work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Income, costs and profit",
+        "body": "Revenue is income earned from sales; expenses are costs incurred to operate. Cash received and profit are not always the same because timing and unpaid invoices matter. Practice: classify sample transactions and calculate a simple period result.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for business finance work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Receipts and documentation",
+        "body": "Give transactions traceable references, keep readable receipts and record the reason for adjustments. Never delete a disputed transaction to make totals match. Practice: create a document checklist for sales, expenses and supplier payments.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for business finance work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Cash flow planning",
+        "body": "List expected cash in and cash out by date, account for timing and maintain a buffer for known obligations. Forecasts are estimates, not guarantees. Practice: build a four-week cash-flow forecast and identify a potential shortfall.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for business finance work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Reconcile records",
+        "body": "Compare internal records with bank or payment-provider statements, match references and amounts, and investigate duplicates, fees, timing differences and missing items. Do not force a balance by adding an unexplained adjustment. Practice: reconcile a fictional statement and produce an exception list.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for business finance work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Monthly reporting and controls",
+        "body": "Prepare a summary of income, expenses, outstanding amounts and cash position. Restrict access, approve corrections and keep backups. For tax or statutory filings, consult current local rules or a qualified professional. Practice: write a one-page monthly report with caveats.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for business finance work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: bookkeeping pack",
+        "body": "Deliver a transaction ledger, category guide, reconciliation checklist, cash forecast and monthly summary using clearly labelled training data. Include a list of unresolved items and how they would be followed up.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for business finance work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "project-management-practical",
+    "title": "Practical Project Management",
+    "summary": "Turn a vague goal into a scoped plan with milestones, responsibilities, risks and status reporting.",
+    "price": 650,
+    "lessons": [
+      {
+        "title": "Define the outcome and scope",
+        "body": "Describe the result, who needs it and how success will be measured. State what is excluded to prevent uncontrolled scope growth. Practice: write a project charter for a small website or community event.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for project management work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Break work into deliverables",
+        "body": "Split the goal into tasks with clear completion criteria and dependencies. Estimate effort as a range and include review time. Practice: create a work breakdown and identify the critical dependencies.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for project management work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Schedule and assign ownership",
+        "body": "Give each task one accountable owner, a due date and a clear handoff. Build a realistic timeline and flag unavailable resources early. Practice: create a two-week plan with milestones and a weekly check-in.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for project management work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Manage risks and changes",
+        "body": "Record risks with likelihood, impact, mitigation and an owner. Assess change requests against scope, time, cost and quality before accepting them. Practice: make a risk register and respond to a late requirement change.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for project management work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Communicate progress",
+        "body": "Report completed work, next work, blockers and decisions needed. Use evidence and specific dates rather than vague green statuses. Practice: write a concise status update that asks for one clear decision.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for project management work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Deliver and learn",
+        "body": "Test deliverables against acceptance criteria, get sign-off from the right stakeholder and document handover. Review what worked and what should change next time. Practice: create a launch checklist and retrospective questions.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for project management work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: project plan",
+        "body": "Deliver a charter, task breakdown, schedule, risk register, stakeholder update and acceptance checklist. Explain assumptions and identify which dates depend on outside decisions.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for project management work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "video-editing-content",
+    "title": "Video Editing for Social & Professional Content",
+    "summary": "Plan, edit and export short videos with clear storytelling, captions, sound and platform-aware formats.",
+    "price": 650,
+    "lessons": [
+      {
+        "title": "Plan a short story",
+        "body": "Define the audience, one message and the desired action. Use a simple beginning, middle and end, and prepare a shot list before recording. Practice: script a 30–45 second educational video with a clear hook and useful payoff.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for creative production work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Organise footage and projects",
+        "body": "Use descriptive filenames, folders, a consistent frame rate and backups. Keep original media and project files separate from exports. Practice: create a folder structure and select the best takes from a fictional shot list.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for creative production work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Build a clean rough cut",
+        "body": "Trim pauses, remove repeated information and keep each shot purposeful. Use cuts to support meaning rather than adding transitions everywhere. Practice: assemble a rough timeline with an opening, three key points and a closing.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for creative production work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Audio and captions",
+        "body": "Prioritise clear speech, reduce distracting background noise and keep music below dialogue. Add accurate captions and proofread names and technical terms. Practice: produce a caption transcript and identify audio levels that need adjustment.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for creative production work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Motion, graphics and accessibility",
+        "body": "Use titles and graphics to clarify the message. Maintain readable contrast and safe margins, and avoid rapid flashing. Use only media you own or have permission to use. Practice: add a title, lower-third and end card with consistent styling.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for creative production work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Export for the destination",
+        "body": "Match aspect ratio, resolution and format to the intended platform; inspect the final file on a phone as well as a computer. Check spelling, audio, framing and compression before publishing. Practice: create a vertical and a landscape export from the same edit.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for creative production work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: publish-ready video",
+        "body": "Deliver the final short video, project file, captions, thumbnail and a brief note describing audience, purpose, assets and export settings. Label any stock or AI-generated assets and verify usage rights.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for creative production work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "customer-support-professional",
+    "title": "Customer Support & Remote Work Essentials",
+    "summary": "Practise professional communication, ticket handling, de-escalation, documentation and remote-work routines.",
+    "price": 600,
+    "lessons": [
+      {
+        "title": "Communicate with clarity",
+        "body": "A good reply acknowledges the issue, gives a direct answer, explains the next step and sets a realistic expectation. Use plain language and avoid blame. Practice: rewrite three unclear customer messages into concise, helpful responses.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for customer support work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Triage and prioritise tickets",
+        "body": "Record the issue, impact, urgency, product area and relevant evidence. Use published service rules rather than guessing priority. Practice: classify sample tickets and explain which needs attention first.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for customer support work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Handle difficult conversations",
+        "body": "Listen, acknowledge frustration without making unsupported promises, explain options and escalate when needed. Never ask customers to send passwords or full payment credentials. Practice: draft a calm response to a delayed service and a disputed charge.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for customer support work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Document and resolve issues",
+        "body": "Keep notes factual, relevant and respectful. Record steps tried, outcomes and handoffs so another agent can continue. Protect personal information and follow retention rules. Practice: write a sample ticket note that another agent can act on.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for customer support work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Work remotely and collaborate",
+        "body": "Use clear status updates, reliable handoffs, calendar discipline and secure devices. Ask clarifying questions early and document decisions in the agreed system. Practice: write an end-of-shift handover with open issues and next actions.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for customer support work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Measure service quality",
+        "body": "Understand response time, resolution time, customer satisfaction and repeat contacts, while recognising that one metric alone can be misleading. Do not manipulate records to improve scores. Practice: review a sample support report and suggest one quality improvement.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for customer support work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: support playbook",
+        "body": "Deliver response templates, ticket-triage rules, escalation map, handover template and a short quality checklist. Use fictional customer data and explain when an issue needs specialist review.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for customer support work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "cloud-devops-starter",
+    "title": "Cloud & DevOps Foundations",
+    "summary": "Understand cloud concepts, deployment pipelines, environment configuration, monitoring and safe releases.",
+    "price": 800,
+    "lessons": [
+      {
+        "title": "Cloud concepts and shared responsibility",
+        "body": "Cloud services provide compute, storage and managed capabilities with different levels of control. Understand the provider/customer responsibility boundary, regions, availability and cost. Practice: compare a virtual machine, a managed platform and object storage for a small web app.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cloud and devops work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Linux and command-line basics",
+        "body": "Learn navigation, files, permissions, processes and logs. Use commands carefully and understand the working directory before changing or deleting files. Practice: document a safe set of commands to inspect an application folder and read logs.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cloud and devops work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Git and collaborative delivery",
+        "body": "Commit small logical changes, write descriptive messages and review diffs before merging. Keep secrets out of version control and use branches for isolated work. Practice: create a feature branch, make a small change and describe the review process.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cloud and devops work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Configuration and secrets",
+        "body": "Separate configuration from code and load credentials from environment variables or a managed secret store. Never commit API keys. Use distinct development and production settings and rotate exposed credentials. Practice: prepare an environment-variable checklist without using real secrets.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cloud and devops work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Build and deploy pipeline",
+        "body": "A pipeline can run linting, tests, build steps and deployment gates. Require tests and review before production changes, and maintain a rollback plan. Practice: diagram a simple pipeline for a web app and specify what blocks a release.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cloud and devops work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Monitoring and reliability",
+        "body": "Track service health, errors, latency and resource use. Alerts should be actionable and logs should avoid sensitive data. Backups need restoration tests. Practice: write a launch checklist with a health check, alert thresholds and rollback decision.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cloud and devops work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: deployment runbook",
+        "body": "Deliver a deployment diagram, environment checklist, CI pipeline outline, monitoring plan, backup-and-restore test and rollback runbook. Use a sandbox project; cloud accounts and paid resources are optional and must be configured by the learner.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for cloud and devops work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "freelancing-client-ready",
+    "title": "Freelancing: Portfolio, Proposals & Client Delivery",
+    "summary": "Package a service, build proof of skill, write tailored proposals and manage client work professionally.",
+    "price": 600,
+    "lessons": [
+      {
+        "title": "Choose a focused service",
+        "body": "Start with a specific deliverable and audience rather than claiming to do everything. Define the problem solved, expected input, output, timeline and exclusions. Practice: write a one-sentence offer for a skill you can demonstrate.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for freelancing work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Build proof with portfolio projects",
+        "body": "Create a relevant sample, explain the brief and decisions, and show the final result. Do not present practice work as paid client work or invent testimonials. Practice: draft a case study with challenge, process, outcome and limitations.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for freelancing work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Set scope and price",
+        "body": "Estimate effort, revisions, tools, fees and risk. Explain what is included and how additional requests are handled. Avoid promising outcomes you cannot control. Practice: prepare two transparent service packages and a quote with assumptions.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for freelancing work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Write tailored proposals",
+        "body": "Reference the client’s stated need, explain your approach, point to relevant evidence and ask focused questions. Avoid generic mass messages and false claims. Practice: write a short proposal for a clearly fictional client brief.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for freelancing work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Communicate and deliver",
+        "body": "Confirm requirements, milestones, file formats and review dates in writing. Share progress early, keep backups and document changes. Practice: create a kickoff checklist and a delivery message with clear next steps.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for freelancing work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Protect yourself and the client",
+        "body": "Use platform-approved payment methods, understand contract terms and avoid suspicious requests to pay upfront fees for a job. Protect client data and clarify rights to the final work. Practice: review a fictional project scenario and identify red flags and questions to ask.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for freelancing work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: freelance launch kit",
+        "body": "Deliver a focused service offer, portfolio case study, proposal template, quote, project checklist and client handoff template. Make claims only about skills and results you can substantiate.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for freelancing work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "slug": "productivity-no-code-automation",
+    "title": "No-Code Automation & Digital Productivity",
+    "summary": "Map repeatable work, build reliable forms and workflows, and document safe automations using no-code tools.",
+    "price": 650,
+    "lessons": [
+      {
+        "title": "Find a repeatable process",
+        "body": "Choose a frequent task with clear rules and low risk. Map trigger, input, steps, exceptions and expected output before selecting a tool. Practice: map a lead intake or meeting-action process.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for automation work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Design forms and clean inputs",
+        "body": "Ask only for necessary information, use validation and make labels clear. Explain how collected information will be used and restrict access. Practice: design a simple request form with required fields and sensible error messages.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for automation work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Connect workflow steps",
+        "body": "Understand triggers, actions, filters and field mapping. Test with dummy records before connecting real systems. Practice: diagram a workflow that sends a new form submission to a review queue without automatically contacting customers.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for automation work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Handle failures and duplicates",
+        "body": "Plan for missing fields, repeated events, rate limits and service outages. Use unique IDs or idempotency where supported, log failures and provide a manual fallback. Practice: write test cases for duplicate submissions and a failed destination step.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for automation work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Permissions and privacy",
+        "body": "Grant integrations only the access they need, review third-party permissions and avoid sending confidential data to unapproved tools. Keep credentials out of documents and logs. Practice: complete a permissions review checklist for a sample workflow.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for automation work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Measure usefulness",
+        "body": "Compare completion time, error rate and user experience before and after a controlled test. Include setup and maintenance time and do not claim savings without evidence. Practice: define a baseline and measurement plan for one workflow.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for automation work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      },
+      {
+        "title": "Capstone: documented automation",
+        "body": "Deliver a process map, test plan, failure-handling notes, access review and user guide. Demonstrate with dummy data and explain what needs approval before production use.",
+        "quiz": [
+          {
+            "q": "Which approach is most appropriate for automation work?",
+            "o": [
+              "Use a documented, tested process and verify the result",
+              "Skip checks to finish faster",
+              "Invent evidence to make the result look better",
+              "Ignore privacy and access requirements"
+            ],
+            "a": 0,
+            "e": "Reliable work requires a documented process, verification and appropriate safeguards."
+          }
+        ]
+      }
+    ]
+  }
 ];
