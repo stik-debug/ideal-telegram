@@ -126,3 +126,7 @@ Set `PUBLIC_URL` to the academy's public origin if you want complete referral li
 ## Expanded career bootcamps
 
 The course catalogue now includes additional seven-lesson bootcamps in AI productivity and automation, cybersecurity foundations, spreadsheet data analysis, UX/UI design, e-commerce operations, small-business bookkeeping, project management, video editing, customer support and remote work, cloud/DevOps, freelancing, and no-code automation. Each lesson includes practical guidance, an exercise or deliverable, and a knowledge check; each course ends with a capstone. Seven days is a guided study format, not a guarantee of mastery or employment. Learners should complete the practical work and assessment before presenting a skill as job-ready.
+
+## Academy quality standard
+
+See `docs/SKILLORA_EXCELLENCE_UPGRADE.md` for the course-quality rubric, learner success loop, job-listing integrity, revenue safeguards, button-by-button acceptance criteria, owner controls and release gates. Treat items marked as future implementation requirements as planned work until confirmed by tests.
