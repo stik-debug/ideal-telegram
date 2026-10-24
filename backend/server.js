@@ -25,11 +25,11 @@ function createApp(env = process.env) {
       'q 0.78 0.58 0.20 RG 1.5 w 130 294 m 712 294 l S Q',
       'BT /F1 13 Tf 0.30 0.37 0.33 rg 1 0 0 1 300 260 Tm (for successfully completing the course) Tj ET',
       `BT /F2 20 Tf 0.05 0.25 0.20 rg 1 0 0 1 ${Math.max(75, 421-safe(course).length*5.5)} 225 Tm (${safe(course)}) Tj ET`,
-      'BT /F1 11 Tf 0.30 0.37 0.33 rg 1 0 0 1 260 188 Tm (Awarded by SkillForge Academy) Tj ET',
+      'BT /F1 11 Tf 0.30 0.37 0.33 rg 1 0 0 1 260 188 Tm (Awarded by Skillora Academy) Tj ET',
       `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 135 130 Tm (Issued: ${safe(issued).slice(0,10)}) Tj ET`,
       `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 495 130 Tm (Certificate ID: ${safe(code)}) Tj ET`,
       'BT /F1 9 Tf 0.30 0.37 0.33 rg 1 0 0 1 190 83 Tm (Independent course completion record; not an accredited qualification.) Tj ET',
-      'BT /F1 8 Tf 0.30 0.37 0.33 rg 1 0 0 1 230 65 Tm (Verify this code using the official SkillForge Academy verification page.) Tj ET'
+      'BT /F1 8 Tf 0.30 0.37 0.33 rg 1 0 0 1 230 65 Tm (Verify this code using the official Skillora Academy verification page.) Tj ET'
     ].join('\n');
     const stream = Buffer.from(lines, 'latin1');
     const objs = [
@@ -236,7 +236,42 @@ function createApp(env = process.env) {
   R('POST','/api/teams',(c)=>{if(!mustUser(c))return;const b=c.body,seats=Number(b.seats);if(!String(b.name||'').trim()||!Number.isInteger(seats)||seats<1||seats>500)return err(c.res,400,'Team name and seat count (1–500) required');const r=db.prepare('INSERT INTO business_teams(owner_id,name,seats) VALUES(?,?,?)').run(c.user.id,String(b.name).slice(0,120),seats);send(c.res,201,{id:Number(r.lastInsertRowid),name:b.name,seats});});
   R('GET','/api/teams',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare('SELECT t.id,t.name,t.seats,t.created,(SELECT COUNT(*) FROM team_members m WHERE m.team_id=t.id AND m.status<>\'removed\') members FROM business_teams t WHERE owner_id=? ORDER BY id DESC').all(c.user.id));});
   R('POST','/api/teams/:id/invite',(c,id)=>{if(!mustUser(c))return;const t=db.prepare('SELECT * FROM business_teams WHERE id=? AND owner_id=?').get(Number(id),c.user.id);if(!t)return err(c.res,404,'Team not found');const email=String(c.body.email||'').trim().toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return err(c.res,400,'Valid email required');const count=db.prepare("SELECT COUNT(*) n FROM team_members WHERE team_id=? AND status<>'removed'").get(t.id).n;if(count>=t.seats)return err(c.res,409,'All team seats are in use');db.prepare('INSERT INTO team_members(team_id,email) VALUES(?,?) ON CONFLICT(team_id,email) DO UPDATE SET status=\'invited\'').run(t.id,email);send(c.res,201,{ok:true,email,status:'invited'});});
-  R('POST','/api/ai-tutor',(c)=>{if(!mustUser(c))return;const q=String(c.body.question||'').trim();if(!q||q.length>2000)return err(c.res,400,'Ask a question (maximum 2,000 characters)');const course=c.body.course_id?db.prepare('SELECT title,summary FROM courses WHERE id=?').get(Number(c.body.course_id)):null;const configured=Boolean(env.OPENAI_API_KEY);if(!configured)return send(c.res,200,{mode:'guided',message:`AI tutor is not connected yet, so this is a study guide rather than a generated AI answer.\n\nYour question: ${q}\n\nTry this learning sequence:\n1. Identify the key concept in ${course?course.title:'your current lesson'}.\n2. Write what you already understand and where you are stuck.\n3. Build a tiny example and test one change at a time.\n4. Explain the result in your own words.\n\n${course?`Course context: ${course.summary||course.title}`:'Tip: include the lesson title and a short example for more focused help.'}\n\nNever paste passwords, payment details or private student information here.`});return send(c.res,501,{error:'AI provider adapter is not configured. Do not expose API keys in the browser.'});});
+  R('POST', '/api/ai-tutor', async (c) => {
+    if (!mustUser(c)) return;
+    const q = String(c.body.question || '').trim();
+    if (!q || q.length > 2000) return err(c.res, 400, 'Ask a question (maximum 2,000 characters)');
+    if (limited('tutor:' + c.user.id, 12)) return err(c.res, 429, 'Tutor limit reached. Please try again in a minute.');
+    const course = c.body.course_id ? db.prepare('SELECT title,summary FROM courses WHERE id=?').get(Number(c.body.course_id)) : null;
+    const guided = () => ({ mode: 'guided', message: `AI tutor is not connected yet, so this is a study guide rather than a generated AI answer.\n\nYour question: ${q}\n\nTry this learning sequence:\n1. Identify the key concept in ${course ? course.title : 'your current lesson'}.\n2. Write what you already understand and where you are stuck.\n3. Build a tiny example and test one change at a time.\n4. Explain the result in your own words.\n\n${course ? `Course context: ${course.summary || course.title}` : 'Tip: include the lesson title and a short example for more focused help.'}\n\nNever paste passwords, payment details or private student information here.` });
+    if (!env.OPENAI_API_KEY) return send(c.res, 200, guided());
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const upstream = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: env.OPENAI_MODEL || 'gpt-5-mini',
+          instructions: 'You are Skillora Academy’s patient, practical tutor. Teach rather than merely give answers. Explain concepts clearly for beginners, break tasks into steps, use small examples, ask one useful check-for-understanding question, and never claim certainty when unsure. Do not complete graded assignments dishonestly. Never request passwords, payment details, or sensitive personal data. Use course context only to help the learner.',
+          input: `Learner question: ${q}\n\nCourse context: ${course ? course.title + ' — ' + (course.summary || '') : 'General study question'}`,
+          max_output_tokens: 900
+        }),
+        signal: controller.signal
+      });
+      if (!upstream.ok) {
+        console.error('AI tutor provider status:', upstream.status);
+        if (upstream.status === 429) return err(c.res, 429, 'The AI tutor is busy or its provider quota is exhausted. Try again later.');
+        return err(c.res, 503, 'The AI tutor is temporarily unavailable. Please try again later.');
+      }
+      const data = await upstream.json();
+      const answer = String(data.output_text || (data.output || []).flatMap(o => o.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('') || '').trim();
+      if (!answer) return err(c.res, 503, 'The AI tutor returned an empty answer. Please try again.');
+      send(c.res, 200, { mode: 'ai', message: answer });
+    } catch (e) {
+      console.error('AI tutor error:', e.name);
+      err(c.res, 503, 'The AI tutor could not be reached. Check the server configuration and try again.');
+    } finally { clearTimeout(timer); }
+  });
   R('GET','/api/admin/analytics',admin((c)=>send(c.res,200,{students:db.prepare("SELECT COUNT(*) n FROM users WHERE role='student'").get().n,enrollments:db.prepare('SELECT COUNT(*) n FROM enrollments').get().n,successful_payments:db.prepare("SELECT COUNT(*) n FROM payments WHERE status='successful'").get().n,revenue_kes:db.prepare("SELECT COALESCE(SUM(amount_kes),0) n FROM payments WHERE status='successful'").get().n,completed_lessons:db.prepare('SELECT COUNT(*) n FROM progress').get().n,certificates:db.prepare('SELECT COUNT(*) n FROM certificates').get().n,open_tickets:db.prepare("SELECT COUNT(*) n FROM support_tickets WHERE status<>'resolved'").get().n,course_completion:db.prepare('SELECT c.title,COUNT(DISTINCT e.user_id) enrolled,COUNT(DISTINCT CASE WHEN x.done=(SELECT COUNT(*) FROM lessons WHERE course_id=c.id) AND x.done>0 THEN x.user_id END) completed FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id LEFT JOIN (SELECT p.user_id,l.course_id,COUNT(*) done FROM progress p JOIN lessons l ON l.id=p.lesson_id GROUP BY p.user_id,l.course_id) x ON x.user_id=e.user_id AND x.course_id=c.id GROUP BY c.id ORDER BY c.title').all()})));
   R('POST','/api/admin/certificates/:code/revoke',admin((c,code)=>{const cert=db.prepare('SELECT code FROM certificates WHERE code=?').get(code);if(!cert)return err(c.res,404,'Certificate not found');const reason=String(c.body.reason||'Admin revocation').slice(0,500);db.prepare('INSERT INTO certificate_status(code,status,reason) VALUES(?,\'revoked\',?) ON CONFLICT(code) DO UPDATE SET status=\'revoked\',reason=excluded.reason,updated=CURRENT_TIMESTAMP').run(code,reason);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'certificate.revoke',code,reason);send(c.res,200,{ok:true,code,status:'revoked'});}));
   R('GET','/api/admin/audit-log',admin((c)=>send(c.res,200,db.prepare('SELECT a.id,a.action,a.target,a.detail,a.created,u.name actor FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 500').all())));
@@ -334,4 +369,4 @@ function createApp(env = process.env) {
   return { server, db };
 }
 module.exports = { createApp };
-if (require.main === module) createApp().server.listen(process.env.PORT || 3000, () => console.log('SkillForge Academy on port ' + (process.env.PORT || 3000)));
+if (require.main === module) createApp().server.listen(process.env.PORT || 3000, () => console.log('Skillora Academy on port ' + (process.env.PORT || 3000)));

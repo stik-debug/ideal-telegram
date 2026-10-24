@@ -130,3 +130,12 @@ The course catalogue now includes additional seven-lesson bootcamps in AI produc
 ## Academy quality standard
 
 See `docs/SKILLORA_EXCELLENCE_UPGRADE.md` for the course-quality rubric, learner success loop, job-listing integrity, revenue safeguards, button-by-button acceptance criteria, owner controls and release gates. Treat items marked as future implementation requirements as planned work until confirmed by tests.
+
+
+## AI tutor configuration
+
+The tutor uses a server-side OpenAI Responses API adapter when `OPENAI_API_KEY` is configured. Set `OPENAI_MODEL` to a model enabled for your API account. Never put the API key in frontend files or commit it to source control. Without a key, the endpoint clearly falls back to guided study steps rather than pretending the answer is AI-generated. The endpoint applies a per-user rate limit, a 20-second request timeout, and generic provider error messages. Usage can incur API charges; set account limits and monitor usage before public launch.
+
+## Important production boundary
+
+This package integrates the existing learner career tracker, admin-published opportunity board, portfolio, study groups, practical challenges, learning missions, referral tracking, benefits, analytics, certificates, course administration and payment-webhook safeguards. It does not magically create a live job feed or verify external employers; an admin must publish real opportunities and check them. Live M-Pesa/card processing, automated recurring subscription billing, external email/SMS delivery, and full end-to-end browser/accessibility/security/load tests still require provider setup and additional implementation/testing. The supplied tests are API/backend tests, not proof that every deployment-specific workflow is production-ready. Existing user data is only preserved if the upgrade is applied to the same persistent database using compatible schema migrations; keep a verified backup before deployment.
