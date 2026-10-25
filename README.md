@@ -144,3 +144,29 @@ This package integrates the existing learner career tracker, admin-published opp
 ## Integrated career and marketplace upgrade
 
 See [`docs/INTEGRATED_UPGRADE_2026.md`](docs/INTEGRATED_UPGRADE_2026.md) for new career applications, employer verification, moderated freelance gigs, instructor applications, membership requests, admin moderation and explicit production-integration limits.
+
+## Skillora Excellence modules (added in this source upgrade)
+
+The learner dashboard now includes a **Skill Passport** (private by default; learner-controlled public sharing), **Practical Practice Labs** with saved submissions, a **Career Path Planner** that recommends existing published courses using transparent rules, and a **Report a Course Issue** form. Admin API endpoints provide course-quality reports and completion/enrolment summaries. These additions use additive SQLite tables and do not intentionally delete existing learner records.
+
+### New endpoints
+
+- `GET /api/practice-labs` — curated practical briefs and the signed-in learner's own saved submission.
+- `POST /api/practice-labs/:key/submit` — save or update a learner submission; optional project URL must use HTTPS.
+- `GET /api/skill-passport` — authenticated learner's certificates, public projects and recorded skill assessments.
+- `POST /api/skill-passport/share` — enable/disable public access. Public sharing is off until the learner enables it.
+- `GET /api/skill-passport/:token` — read-only public passport; only enabled passports are returned.
+- `POST /api/career/plan` — create a rules-based starter career plan and recommended published courses; it is not represented as AI-generated.
+- `POST /api/courses/:id/report` — submit a course quality/accessibility/content report.
+- `GET /api/admin/course-quality` and `PUT /api/admin/course-quality/:id` — admin-only course quality analytics and report workflow.
+
+### Production limitations to resolve before launch
+
+- The career planner is rules-based; configure a real AI provider before advertising it as an AI career agent. The existing AI tutor also needs a server-side provider key.
+- Practice labs save learner work but do not execute arbitrary code or automatically grade every submission. Instructor feedback requires the review workflow to be staffed and tested.
+- The public Skill Passport endpoint returns JSON; a polished human-readable public profile page and search-engine preview are still a separate frontend task. Set `PUBLIC_URL` to return absolute share links.
+- Job listings need real, verified employers and ongoing moderation. No external job feed or guaranteed job placement is included.
+- Real recurring billing, M-Pesa/card provider setup, refund handling, freelance escrow/payouts/disputes, instructor revenue share and external email/push delivery require provider configuration and production verification.
+- Automated tests are not a substitute for full browser, accessibility, penetration, backup-restore and live payment testing.
+
+Before deployment, back up the persistent database and deploy against the same database file/volume. Never replace production data with a fresh empty database. The live website is not changed by generating this ZIP.

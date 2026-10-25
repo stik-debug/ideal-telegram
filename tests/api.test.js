@@ -140,3 +140,25 @@ test('integrated career, freelance, employer verification and membership request
   assert.equal((await call('/api/instructor/apply','POST',{expertise:'Web development',experience:'I have several years of experience building websites and teaching beginner developers through practical projects.'},learner)).s,201);
   assert.equal((await call('/api/admin/marketplace/moderation','GET',null,adminCookie)).s,200);
 });
+
+test('excellence modules: career plan, practice labs, skill passport privacy and course quality moderation', async () => {
+  const uid=Number(app.db.prepare("INSERT INTO users(email,name,pass_hash) VALUES('excellence-student@x.com','Excellence Student',?)").run(hash('longpassword1')).lastInsertRowid); const token='excellence-student-token'; app.db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(token,uid,Date.now()+600000); const student='sid='+token;
+  assert.equal((await call('/api/practice-labs')).j.length >= 5, true);
+  const plan = await call('/api/career/plan','POST',{goal:'Junior data analyst',level:'beginner',hours_per_week:6},student);
+  assert.equal(plan.s,200); assert.ok(plan.j.recommended_courses.length); assert.ok(plan.j.disclaimer.includes('not a generated AI'));
+  const labs=(await call('/api/practice-labs','GET',null,student)).j; assert.ok(labs.length>=5);
+  assert.equal((await call('/api/practice-labs/data-insight-brief/submit','POST',{answer_text:'I will clean the dataset, calculate summary metrics, build a chart, and explain three evidence-based findings with limitations.'},student)).s,201);
+  assert.equal((await call('/api/skill-passport','GET',null,student)).j.share.enabled,false);
+  const shared=await call('/api/skill-passport/share','POST',{enabled:true},student); assert.equal(shared.s,200); assert.ok(shared.j.token);
+  assert.equal((await call('/api/skill-passport/'+shared.j.token)).s,200);
+  assert.equal((await call('/api/skill-passport/share','POST',{enabled:false},student)).s,200);
+  assert.equal((await call('/api/skill-passport/'+shared.j.token)).s,404);
+  const course=(await call('/api/courses')).j[0];
+  assert.equal((await call('/api/courses/'+course.id+'/report','POST',{category:'broken_exercise',details:'The practice exercise link does not open for me.'},student)).s,201);
+  assert.equal((await call('/api/admin/course-quality')).s,401);
+  app.db.prepare("INSERT INTO users(email,name,pass_hash,role) VALUES('quality-admin@x.com','Quality Admin',?,'admin')").run(hash('adminpassword1'));
+  const adminId=app.db.prepare("SELECT id FROM users WHERE email='quality-admin@x.com'").get().id; const adminToken='quality-admin-token'; app.db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(adminToken,adminId,Date.now()+600000); const admin='sid='+adminToken;
+  const quality=await call('/api/admin/course-quality','GET',null,admin); assert.equal(quality.s,200); assert.ok(quality.j.reports.some(r=>r.category==='broken_exercise'));
+  const report=quality.j.reports.find(r=>r.category==='broken_exercise');
+  assert.equal((await call('/api/admin/course-quality/'+report.id,'PUT',{status:'resolved',admin_note:'Reproduced and fixed the exercise link.'},admin)).s,200);
+});
