@@ -139,3 +139,8 @@ The tutor uses a server-side OpenAI Responses API adapter when `OPENAI_API_KEY` 
 ## Important production boundary
 
 This package integrates the existing learner career tracker, admin-published opportunity board, portfolio, study groups, practical challenges, learning missions, referral tracking, benefits, analytics, certificates, course administration and payment-webhook safeguards. It does not magically create a live job feed or verify external employers; an admin must publish real opportunities and check them. Live M-Pesa/card processing, automated recurring subscription billing, external email/SMS delivery, and full end-to-end browser/accessibility/security/load tests still require provider setup and additional implementation/testing. The supplied tests are API/backend tests, not proof that every deployment-specific workflow is production-ready. Existing user data is only preserved if the upgrade is applied to the same persistent database using compatible schema migrations; keep a verified backup before deployment.
+
+
+## Integrated career and marketplace upgrade
+
+See [`docs/INTEGRATED_UPGRADE_2026.md`](docs/INTEGRATED_UPGRADE_2026.md) for new career applications, employer verification, moderated freelance gigs, instructor applications, membership requests, admin moderation and explicit production-integration limits.

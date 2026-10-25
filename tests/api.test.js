@@ -108,3 +108,35 @@ test('retention suite: daily mission, goals, preferences, career, study groups a
   const admin=(await call('/api/login','POST',{email:'retention-admin@x.com',password:'adminpassword1'})).c;
   const analytics=await call('/api/admin/retention-analytics','GET',null,admin);assert.equal(analytics.s,200);assert.ok('referrals' in analytics.j);
 });
+
+test('integrated career, freelance, employer verification and membership requests', async () => {
+  app.db.prepare("INSERT INTO users(email,name,pass_hash) VALUES('market-learner@example.com','Market Learner',?)").run(hash('longpassword1'));
+  app.db.prepare("INSERT INTO users(email,name,pass_hash) VALUES('market-employer@example.com','Market Employer',?)").run(hash('longpassword1'));
+  const learnerId=app.db.prepare("SELECT id FROM users WHERE email='market-learner@example.com'").get().id;
+  const employerId=app.db.prepare("SELECT id FROM users WHERE email='market-employer@example.com'").get().id;
+  app.db.prepare('INSERT INTO sessions(token,user_id,exp) VALUES(?,?,?)').run('market-learner-session',learnerId,Date.now()+86400000);
+  app.db.prepare('INSERT INTO sessions(token,user_id,exp) VALUES(?,?,?)').run('market-employer-session',employerId,Date.now()+86400000);
+  const learner='sid=market-learner-session', employer='sid=market-employer-session';
+  const adminUser = app.db.prepare("INSERT INTO users(email,name,pass_hash,role) VALUES('market-admin@example.com','Market Admin',?,'admin')").run(hash('marketadminpassword1'));
+  const adminId=app.db.prepare("SELECT id FROM users WHERE email='market-admin@example.com'").get().id;
+  app.db.prepare('INSERT INTO sessions(token,user_id,exp) VALUES(?,?,?)').run('market-admin-session',adminId,Date.now()+86400000);
+  const adminCookie='sid=market-admin-session';
+  const gig = await call('/api/marketplace/gigs','POST',{title:'Build a small business website',description:'Create a responsive five-page website with contact form and accessible mobile layout.',skills:'HTML CSS JavaScript',budget_min_kes:5000,budget_max_kes:15000},learner);
+  assert.equal(gig.s,201,JSON.stringify(gig.j)); assert.equal(gig.j.status,'pending'); assert.equal((await call('/api/marketplace/gigs')).j.length,0);
+  assert.equal((await call('/api/admin/marketplace/moderation','GET',null,learner)).s,403);
+  assert.equal((await call(`/api/admin/marketplace/gigs/${gig.j.id}`,'PUT',{status:'open'},adminCookie)).s,200);
+  assert.equal((await call('/api/marketplace/gigs')).j.length,1);
+  assert.equal((await call(`/api/marketplace/gigs/${gig.j.id}/proposals`,'POST',{cover_note:'I have built responsive websites and can deliver the requested pages with accessibility checks.',proposed_budget_kes:9000,timeline_days:10},employer)).s,201);
+  assert.equal((await call('/api/employer/profile','POST',{organization:'Example Company',website:'https://example.com',description:'We are a small company looking to hire skilled freelancers for real projects.'},employer)).s,201);
+  assert.equal((await call('/api/employer/opportunities','POST',{title:'Junior Web Intern',description:'Work with our team on a real customer-facing website and learn from a mentor.'},employer)).s,403);
+  const profile=app.db.prepare("SELECT user_id FROM employer_profiles WHERE organization='Example Company'").get();
+  assert.equal((await call(`/api/admin/employers/${profile.user_id}`,'PUT',{status:'verified'},adminCookie)).s,200);
+  assert.equal((await call('/api/employer/opportunities','POST',{title:'Junior Web Intern',description:'Work with our team on a real customer-facing website and learn from a mentor.',type:'internship',location:'Remote'},employer)).s,201);
+  const opportunity=(await call('/api/opportunities')).j[0];
+  assert.equal((await call(`/api/opportunities/${opportunity.id}/apply`,'POST',{cover_note:'I am interested in this internship and can share my portfolio and practical projects.'},learner)).s,201);
+  assert.equal((await call('/api/membership-requests','POST',{plan_code:'career_bundle'},learner)).s,201);
+  assert.equal((await call('/api/membership-requests','GET',null,adminCookie)).j.length,1);
+  assert.equal((await call('/api/admin/membership-requests/1','PUT',{status:'contacted'},learner)).s,403);
+  assert.equal((await call('/api/instructor/apply','POST',{expertise:'Web development',experience:'I have several years of experience building websites and teaching beginner developers through practical projects.'},learner)).s,201);
+  assert.equal((await call('/api/admin/marketplace/moderation','GET',null,adminCookie)).s,200);
+});
