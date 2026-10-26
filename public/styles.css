@@ -6,3 +6,20 @@
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
 
 .brand-logo{display:block;width:44px;height:44px;object-fit:contain;flex-shrink:0}.footer-brand .brand-logo{width:42px;height:42px}
+
+/* Search and discovery controls: accessible, responsive, and consistent across catalogues. */
+.catalog-tools-enhanced{align-items:end;justify-content:flex-start;flex-wrap:wrap;gap:12px}
+.catalog-tools-enhanced .search-box{flex:1 1 270px;width:auto;min-height:45px}
+.search-clear{border:0;background:transparent;color:var(--muted);font-size:22px;line-height:1;padding:4px 3px}
+.catalog-filter{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:10px;font-weight:800;min-width:145px}
+.catalog-filter select{max-width:100%;border:1px solid #dfe7e0;border-radius:9px;background:#fff;color:var(--ink);padding:11px 10px;font:inherit;font-size:12px}
+.saved-filter{display:flex;align-items:center;gap:7px;min-height:42px;color:var(--muted);font-size:11px;font-weight:700;white-space:nowrap}
+.saved-filter input{accent-color:var(--green2);width:16px;height:16px}
+.course-tags{display:flex;gap:6px;flex-wrap:wrap;margin:-5px 0 14px}
+.course-tags span{font-size:9px;font-weight:800;letter-spacing:.2px;color:#28624e;background:#edf7ef;border-radius:30px;padding:4px 8px}
+.course-card-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.save-course{border:1px solid #d8e4da;background:#fff;color:var(--green);border-radius:8px;padding:8px 10px;font-size:10px;font-weight:800;white-space:nowrap}
+.save-course.is-saved{background:#fff4f0;color:#a33c4c;border-color:#f0d1d4}
+.course-open:focus-visible,.save-course:focus-visible,.catalog-filter select:focus-visible,.search-clear:focus-visible{outline:3px solid #d4a93f;outline-offset:3px}
+[hidden]{display:none!important}
+@media(max-width:700px){.catalog-tools-enhanced{align-items:stretch}.catalog-tools-enhanced .search-box{flex-basis:100%;width:100%}.catalog-filter{flex:1 1 42%;min-width:0}.saved-filter{flex:1 1 100%}.course-card-actions{justify-content:flex-start}.course-card-actions .course-open{flex:1}.catalog-tools{align-items:stretch;flex-wrap:wrap}}

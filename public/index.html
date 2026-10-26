@@ -51,9 +51,15 @@
 
     <section class="section programs-section" id="programs">
       <div class="section-heading"><div><p class="eyebrow dark">FIND YOUR STARTING POINT</p><h2>Choose a skill. <span>Change your direction.</span></h2><p class="section-lede">Explore our available courses and preview a lesson before you commit.</p></div><div class="catalog-note"><span class="note-icon">KSh</span><span><b>Clear pricing</b><small>No hidden subscription fee</small></span></div></div>
-      <div class="catalog-tools"><label class="search-box"><span aria-hidden="true">⌕</span><input id="course-search" type="search" placeholder="Search courses..." aria-label="Search courses"></label><div id="course-count" class="course-count">Loading courses…</div></div>
+      <div class="catalog-tools catalog-tools-enhanced">
+        <label class="search-box"><span aria-hidden="true">⌕</span><input id="course-search" type="search" placeholder="Search by skill, topic, or course..." aria-label="Search courses by title, topic, or skill" autocomplete="off"><button type="button" id="course-search-clear" class="search-clear" aria-label="Clear course search" hidden>×</button></label>
+        <label class="catalog-filter">Category<select id="course-category" aria-label="Filter courses by category"><option value="all">All categories</option><option value="ai">AI & Automation</option><option value="software">Software & Web</option><option value="data">Data & Analytics</option><option value="business">Business & Freelancing</option><option value="creative">Design & Content</option><option value="career">Career Skills</option><option value="other">Other skills</option></select></label>
+        <label class="catalog-filter">Sort by<select id="course-sort" aria-label="Sort courses"><option value="recommended">Recommended</option><option value="title-asc">Name A–Z</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option><option value="lessons-desc">Most lessons</option></select></label>
+        <label class="saved-filter"><input type="checkbox" id="saved-courses-only"> Saved courses</label>
+        <div id="course-count" class="course-count" role="status" aria-live="polite">Loading courses…</div>
+      </div>
       <div id="course-list" class="course-grid"><div class="loading-card">Preparing your learning options…</div></div>
-      <p class="catalog-footnote">Course availability and lesson counts are shown honestly. Preview a free lesson before enrolling.</p>
+      <p class="catalog-footnote">Course availability and lesson counts are shown honestly. Preview a free lesson before enrolling. Tip: press Ctrl/Cmd + K to jump to course search. Saved courses stay on this device.</p>
     </section>
 
     <section class="path-section" id="how-it-works">
