@@ -2,7 +2,9 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 const { open } = require('./db'); const { hash, verify } = require('./auth');
 
 function createApp(env = process.env) {
-  const db = open(env.DB_FILE || './data/skillforge.db');
+  const dbFile = env.DB_FILE || './data/skillforge.db';
+  const db = open(dbFile);
+  console.log('[Skillora] SQLite database path:', require('path').resolve(dbFile));
   const secret = env.PAYMENT_WEBHOOK_SECRET || '';
   const hits = new Map();
   const limited = (key, max = 10) => { const now = Date.now(), a = (hits.get(key) || []).filter(t => now - t < 60000); a.push(now); hits.set(key, a); return a.length > max; };

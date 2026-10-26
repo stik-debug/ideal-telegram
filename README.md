@@ -28,15 +28,17 @@ npm test
 npm start
 ```
 
-Open `http://localhost:3000`. The database defaults to `./data/skillora.db`. For deployment, configure a persistent writable database path and set `COOKIE_SECURE=true` behind HTTPS.
+Open `http://localhost:3000`. The database defaults to `./data/skillora.db` for local development. **For production, `DB_FILE` must point to a persistent writable disk/volume provided by your host.** Do not store SQLite on an ephemeral deployment filesystem: redeploys, restarts, or new instances can otherwise appear to erase learner accounts and progress. Use one persistent database volume for the app instance, run backups, and test restore before upgrading. Database persistence protects accounts, enrolments, lesson progress, submissions, certificates and other records as long as deployments keep using the same database file. It does not automatically migrate data if you change database providers or paths.
 
-Create the first administrator using the provided script:
+Set `COOKIE_SECURE=true` behind HTTPS. Keep a copy of your current database before every deployment. The server applies additive schema changes at startup; avoid replacing the production database with the bundled development database.
+
+Create or restore the owner/admin role using the provided script. Run it in the deployment environment with the **same `DB_FILE` path as the live app**:
 
 ```bash
-npm run create-admin
+DB_FILE=/path/to/persistent/skillora.db npm run create-admin -- owner@example.com 'Use-a-long-unique-password' 'Academy Owner'
 ```
 
-Follow the prompts and keep administrator credentials private.
+Replace the example email, password, and path with your own. This sets the role to `admin` for the matching email (or creates that account); it does not recover a forgotten password for an existing account. Keep credentials private and never expose this command as a public website endpoint. After signing in, an account with the `admin` role sees **Admin dashboard** in the top navigation. If that button is missing, first confirm the account role in the same persistent database rather than creating a fresh database.
 
 ## Certificates
 
@@ -170,3 +172,13 @@ The learner dashboard now includes a **Skill Passport** (private by default; lea
 - Automated tests are not a substitute for full browser, accessibility, penetration, backup-restore and live payment testing.
 
 Before deployment, back up the persistent database and deploy against the same database file/volume. Never replace production data with a fresh empty database. The live website is not changed by generating this ZIP.
+
+
+## Production data persistence and owner access
+
+- Configure `DB_FILE` to an absolute path on a persistent volume supplied by your host (for example, a mounted persistent disk path). The exact path depends on the hosting provider.
+- Confirm the app process can read/write the file and its parent directory. Keep the same `DB_FILE` across deploys.
+- Before deploying, run `npm run backup` with the live `DB_FILE` and confirm the backup is stored somewhere durable. Do not rely on a backup folder on an ephemeral disk.
+- After deployment, sign in with the owner account, open **Admin dashboard**, inspect learner/course counts and verify a test learner's saved progress survives a restart/redeploy.
+- Do not promote arbitrary accounts to admin. Use a controlled deployment shell/console, strong unique password, HTTPS and restricted operator access.
+- The owner dashboard is hidden from regular student accounts by design. If the current owner account is marked `student`, run the admin script against the existing production database; do not create a replacement database.
