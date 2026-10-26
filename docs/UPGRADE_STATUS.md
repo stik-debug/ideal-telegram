@@ -69,3 +69,10 @@ Run `npm test`, then test signup/login, locked paid lesson access, payment callb
 - Career recommendations are a transparent baseline (published courses not yet enrolled in), not an AI-based or labor-market-verified recommender. Career opportunities must be published from genuine sources.
 - Retention metrics currently use available event timestamps and the application's UTC date conventions. Before production, standardize timezone handling, add cohort-specific week-1/week-4 definitions, and audit data retention/privacy requirements.
 - No Swahili support was added.
+
+## Learner return-and-progress upgrade (2026-10-26)
+- Added a responsive daily learning check-in panel to the course catalogue.
+- Learners choose one small daily action (lesson, practice, project improvement, or review), mark it complete, and see a rolling seven-day check-in view.
+- Check-ins are intentionally stored in this browser/device using localStorage; they are not represented as server-verified study activity and do not sync across devices.
+- Updated the UI search test file to use consistent ES module imports so the full automated suite runs under the configured Node.js test runner.
+- Validation: JavaScript syntax check passed; all 15 automated test cases passed. Manual cross-browser testing and production deployment are still required.

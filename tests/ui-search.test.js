@@ -1,8 +1,9 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const root = path.join(__dirname, '..');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/styles.css'), 'utf8');
