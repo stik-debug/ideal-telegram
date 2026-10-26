@@ -21,7 +21,23 @@ async function api(p, method='GET', body) {
   if(!r.ok && !j.ref) throw Object.assign(new Error(j.error || 'Something went wrong. Please try again.'),{j,status:r.status});
   return j;
 }
-function setView(html){ app.innerHTML = html; window.scrollTo({top:0,behavior:'smooth'}); }
+function setView(html){
+  // Keep global navigation available on every SPA screen, including Plans, Auth,
+  // Dashboard, Careers, Freelance, lessons and error states.
+  const quickNav = `<nav class="view-quick-nav" aria-label="Main navigation"><button type="button" class="nav-btn" data-global-nav="home">Home</button><button type="button" class="nav-btn" data-global-nav="courses">Courses</button><button type="button" class="nav-btn" data-global-nav="how">How it works</button><button type="button" class="nav-btn" data-global-nav="faq">FAQs</button><button type="button" class="nav-btn" data-global-nav="plans">Plans</button></nav>`;
+  app.innerHTML = quickNav + html;
+  app.querySelectorAll('[data-global-nav]').forEach(button => button.addEventListener('click', () => {
+    const destination = button.dataset.globalNav;
+    if (destination === 'plans') { membershipPage(); return; }
+    const hashes = {home:'', courses:'programs', how:'how-it-works', faq:'faq'};
+    const hash = hashes[destination];
+    // Rebuild the original landing page; SPA views replace its sections.
+    const url = '/' + (hash ? '#' + hash : '');
+    if (location.pathname === '/' && location.hash === (hash ? '#' + hash : '') && app.innerHTML === homeMarkup) { window.scrollTo({top:0,behavior:'smooth'}); return; }
+    location.assign(url);
+  }));
+  window.scrollTo({top:0,behavior:'smooth'});
+}
 function header(){
   $('#nav').innerHTML = `<button class="nav-btn" id="nav-careers">Careers</button><button class="nav-btn" id="nav-marketplace">Freelance</button><button class="nav-btn" id="nav-membership">Plans</button>` + (me ? `${me.role==='admin'?'<button class="nav-btn" id="nav-admin">Admin dashboard</button>':''}<button class="nav-btn" id="nav-dashboard">My learning</button><button class="nav-btn primary" id="nav-out">Sign out</button>` : `<button class="nav-btn" id="nav-in">Sign in</button><button class="nav-btn primary" id="nav-join">Get started</button>`);
   if($('#nav-careers'))$('#nav-careers').onclick=careerMarketplace;if($('#nav-marketplace'))$('#nav-marketplace').onclick=freelanceMarketplace;if($('#nav-membership'))$('#nav-membership').onclick=membershipPage;
