@@ -28,3 +28,10 @@ test('navigation fallback, request timeout, and keyboard search shortcut exist',
   assert.match(js, /e\.key\.toLowerCase\(\)==='k'/);
   assert.match(css, /@media\(max-width:700px\)/);
 });
+
+test('auth back-to-courses restores the original catalogue after SPA view replacement', async () => {
+  const fs = await import('node:fs/promises');
+  const source = await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(source, /function homeScroll\(\)[\s\S]*location\.reload\(\)/);
+  assert.match(source, /header\(\);if\(me\)await dash\(\);else homeScroll\(\)/);
+});

@@ -66,9 +66,14 @@ function auth(){
   let registering=false;
   const update=()=>{$('#name-field').hidden=!registering;$('#auth-name').required=registering;$('#auth-title').textContent=registering?'Create your student account':'Welcome back';$('#auth-submit').textContent=registering?'Create account':'Sign in';$('#auth-switch').textContent=registering?'I already have an account':'Create account';$('#auth-password').autocomplete=registering?'new-password':'current-password';$('#auth-error').textContent=''};
   $('#auth-switch').onclick=()=>{registering=!registering;update()};
-  $('#auth-form').onsubmit=async e=>{e.preventDefault();const err=$('#auth-error');err.textContent='';const b=$('#auth-submit');b.disabled=true;b.textContent='Please wait…';try{await api(registering?'/register':'/login','POST',{name:$('#auth-name').value,email:$('#auth-email').value.trim(),password:$('#auth-password').value,referral_code:new URLSearchParams(location.search).get('ref')||''});me=await api('/me');header();homeScroll();if(me)await dash();}catch(ex){err.textContent=ex.message;}finally{b.disabled=false;b.textContent=registering?'Create account':'Sign in'}};
+  $('#auth-form').onsubmit=async e=>{e.preventDefault();const err=$('#auth-error');err.textContent='';const b=$('#auth-submit');b.disabled=true;b.textContent='Please wait…';try{await api(registering?'/register':'/login','POST',{name:$('#auth-name').value,email:$('#auth-email').value.trim(),password:$('#auth-password').value,referral_code:new URLSearchParams(location.search).get('ref')||''});me=await api('/me');header();if(me)await dash();else homeScroll();}catch(ex){err.textContent=ex.message;}finally{b.disabled=false;b.textContent=registering?'Create account':'Sign in'}};
 }
-function homeScroll(){window.location.href='/#programs'}
+function homeScroll(){
+  // The SPA replaces #main, including #programs. Changing only the URL hash does not restore it.
+  // Reload the document so the original course catalogue is rebuilt and all home controls are rebound.
+  if (location.pathname !== '/' || location.hash) { location.assign('/'); return; }
+  location.reload();
+}
 async function course(slug){
   try{
     const c=await api('/courses/'+encodeURIComponent(slug));
