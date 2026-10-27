@@ -187,4 +187,101 @@ async function freelanceMarketplace(){
 async function membershipPage(){setView(`<section class="view-shell"><div class="view-head"><p class="eyebrow dark">LEARN WITHOUT LOSING MOMENTUM</p><h1>Choose your learning path</h1><p>Membership requests let the academy understand demand. No plan is charged or activated by this page; real pricing and payment-provider configuration must be completed before launch.</p></div><div class="dashboard-grid"><article class="panel"><h2>All-access monthly</h2><p>Access to eligible published courses while active, subject to clear fair-use terms.</p><button class="course-open" data-plan="all_access_monthly">Request this plan</button></article><article class="panel"><h2>Career bundle</h2><p>Focused learning path, portfolio project and career preparation.</p><button class="course-open" data-plan="career_bundle">Request this plan</button></article><article class="panel"><h2>Business team</h2><p>Training seats and progress reporting for a team.</p><button class="course-open" data-plan="business_team">Request this plan</button></article></div><div class="panel" style="margin-top:18px"><p id="plan-status" role="status">${me?'Select a plan to submit a request.':'Sign in before requesting a plan.'}</p>${me?'':'<button class="btn-solid" id="plan-signin">Sign in / create account</button>'}</div></section>`);if($('#plan-signin'))if($('#plan-signin'))$('#plan-signin').onclick=auth;app.querySelectorAll('[data-plan]').forEach(b=>b.onclick=async()=>{if(!me){auth();return}b.disabled=true;const old=b.textContent;b.textContent='Submitting…';try{const r=await api('/membership-requests','POST',{plan_code:b.dataset.plan});$('#plan-status').textContent=r.message||'Request submitted.'}catch(e){$('#plan-status').textContent=e.message}finally{b.disabled=false;b.textContent=old}})}
 
 function home(){window.scrollTo({top:0,behavior:'smooth'});renderCourses()}
+
+
+/* ===== World-class UX: theme, back-to-top, toast ===== */
+(function skilloraPolish(){
+  const LS = {
+    get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+    set(k,v){ try { localStorage.setItem(k,v); } catch {} }
+  };
+  const root = document.documentElement;
+  function preferred(){
+    const saved = LS.get('skillora.theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function applyTheme(t){
+    root.setAttribute('data-theme', t);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.textContent = t === 'dark' ? '☀' : '☾';
+      btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+      btn.title = t === 'dark' ? 'Light mode' : 'Dark mode';
+    }
+    const metas = document.querySelectorAll('meta[name="theme-color"]');
+    // keep existing dual metas; browsers pick via media queries
+  }
+  function ensureThemeToggle(){
+    if (document.getElementById('theme-toggle')) return;
+    const nav = document.getElementById('nav');
+    if (!nav) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'theme-toggle';
+    b.className = 'theme-toggle';
+    b.addEventListener('click', () => {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      LS.set('skillora.theme', next);
+      applyTheme(next);
+    });
+    nav.appendChild(b);
+    applyTheme(preferred());
+  }
+  // Apply early to avoid flash
+  applyTheme(preferred());
+  // Re-inject after header() rebuilds #nav
+  const _header = window.header;
+  if (typeof _header === 'function') {
+    window.header = function(){ _header.apply(this, arguments); ensureThemeToggle(); };
+  }
+  document.addEventListener('DOMContentLoaded', ensureThemeToggle);
+  // Also try soon in case header already ran
+  setTimeout(ensureThemeToggle, 0);
+  setTimeout(ensureThemeToggle, 300);
+
+  // Back to top
+  const btt = document.getElementById('back-to-top');
+  if (btt) {
+    const onScroll = () => {
+      if (window.scrollY > 480) btt.classList.add('is-visible');
+      else btt.classList.remove('is-visible');
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    btt.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    onScroll();
+  }
+
+  // Lightweight toast (shared)
+  if (typeof window.toast !== 'function') {
+    window.toast = function(msg, isErr){
+      let host = document.getElementById('skillora-toasts');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'skillora-toasts';
+        host.setAttribute('aria-live', 'polite');
+        host.style.cssText = 'position:fixed;bottom:84px;right:22px;z-index:50;display:flex;flex-direction:column;gap:8px;max-width:min(360px,92vw);pointer-events:none';
+        document.body.appendChild(host);
+      }
+      const t = document.createElement('div');
+      t.role = 'status';
+      t.textContent = msg;
+      t.style.cssText = 'pointer-events:auto;padding:12px 16px;border-radius:12px;font:600 13px/1.4 Manrope,system-ui,sans-serif;box-shadow:0 12px 32px rgba(0,0,0,.18);background:' + (isErr ? '#7a1f1f' : '#0c4b3d') + ';color:#fff;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s';
+      host.appendChild(t);
+      requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateY(0)'; });
+      setTimeout(() => {
+        t.style.opacity = '0';
+        setTimeout(() => t.remove(), 220);
+      }, 3200);
+    };
+  }
+
+  // System preference live update when user has not forced a choice
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (!LS.get('skillora.theme')) applyTheme(preferred());
+    });
+  } catch {}
+})();
+
 init();

@@ -1,58 +1,11 @@
 /* Skillora Learning Hub: streaks, spaced-repetition reviews, Practice Lab, cohorts, outcomes, SMS reminders,
-   offline library, data saver, Swahili interface, public results and M-Pesa checkout UI.
+   offline library, data saver, public results and M-Pesa checkout UI.
    Loaded after app.js (uses its globals: me, api, esc, $, setView, auth, course, header). */
 (function () {
   'use strict';
   const LS = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }, del(k) { try { localStorage.removeItem(k); } catch { } } };
   const el = (s, r = document) => r.querySelector(s);
-  const T = (en) => (lang === 'sw' && SW[en]) || en;
-  let lang = LS.get('skillora.lang') === 'sw' ? 'sw' : 'en';
-
-  // ================= Swahili interface (static site text and navigation; course lessons remain in English) =================
-  const SW = {
-    'Skip to content': 'Ruka hadi maudhui', 'Programs': 'Kozi', 'How it works': 'Jinsi inavyofanya kazi', 'Why Skillora': 'Kwa nini Skillora', 'FAQs': 'Maswali',
-    'Careers': 'Kazi', 'Freelance': 'Kazi za kujitegemea', 'Plans': 'Mipango', 'Sign in': 'Ingia', 'Get started': 'Anza sasa', 'Sign out': 'Toka', 'My learning': 'Masomo yangu', 'Control Center': 'Kituo cha Udhibiti', 'Learning Hub': 'Kituo cha Kujifunza',
-    'YOUR NEXT CHAPTER STARTS HERE': 'HATUA YAKO IJAYO INAANZIA HAPA', 'Skills that move you': 'Ujuzi unaokusukuma', 'forward.': 'mbele.',
-    'Practical tech and AI skills, built around real projects—not just videos. Learn at your pace, from wherever you are in Kenya.': 'Ujuzi wa vitendo wa teknolojia na AI, unaojengwa kwa miradi halisi—si video tu. Jifunze kwa kasi yako, popote ulipo nchini Kenya.',
-    'Explore courses': 'Tazama kozi', 'Start learning free': 'Anza kujifunza bure', 'Beginner-friendly': 'Rafiki kwa wanaoanza', 'Learn at your pace': 'Jifunze kwa kasi yako', 'Prices in KSh': 'Bei kwa KSh',
-    'Your next step is ready.': 'Hatua yako ijayo iko tayari.', 'Learn by doing': 'Jifunze kwa vitendo', 'Projects over theory': 'Miradi kuliko nadharia', 'Made for real life': 'Imetengenezwa kwa maisha halisi', 'Skills you can use': 'Ujuzi unaoweza kutumia',
-    'LEARN A SKILL': 'JIFUNZE UJUZI', 'BUILD SOMETHING REAL': 'JENGA KITU HALISI', 'OPEN NEW DOORS': 'FUNGUA MILANGO MIPYA',
-    'Practical-first lessons': 'Masomo ya vitendo kwanza', 'Transparent KSh pricing': 'Bei wazi kwa KSh', 'Learn on your schedule': 'Jifunze kwa ratiba yako', 'Skills for the digital economy': 'Ujuzi kwa uchumi wa kidijitali',
-    'FIND YOUR STARTING POINT': 'PATA PA KUANZIA', 'Choose a skill.': 'Chagua ujuzi.', 'Change your direction.': 'Badilisha mwelekeo wako.', 'Explore our available courses and preview a lesson before you commit.': 'Tazama kozi zetu na uone somo la mfano kabla ya kujiunga.',
-    'Clear pricing': 'Bei wazi', 'No hidden subscription fee': 'Hakuna ada fiche ya usajili', 'Category': 'Kategoria', 'All categories': 'Kategoria zote', 'AI & Automation': 'AI na Uendeshaji Kiotomatiki', 'Software & Web': 'Programu na Wavuti', 'Data & Analytics': 'Data na Uchambuzi', 'Business & Freelancing': 'Biashara na Kujitegemea', 'Design & Content': 'Usanifu na Maudhui', 'Career Skills': 'Ujuzi wa Kazi', 'Other skills': 'Ujuzi mwingine',
-    'Sort by': 'Panga kwa', 'Recommended': 'Zinazopendekezwa', 'Name A–Z': 'Jina A–Z', 'Price: low to high': 'Bei: chini hadi juu', 'Price: high to low': 'Bei: juu hadi chini', 'Most lessons': 'Masomo mengi zaidi', 'Saved courses': 'Kozi zilizohifadhiwa', 'Loading courses…': 'Inapakia kozi…',
-    'YOUR NEXT SMALL WIN': 'USHINDI WAKO MDOGO UJAO', 'Build a learning rhythm that fits your life': 'Jenga mazoea ya kujifunza yanayolingana na maisha yako', 'Today’s focus': 'Lengo la leo', 'Complete one lesson': 'Maliza somo moja', 'Practise for 15 minutes': 'Fanya mazoezi kwa dakika 15', 'Make one small project improvement': 'Boresha mradi wako kidogo', 'Review yesterday’s notes': 'Pitia madokezo ya jana', 'Complete today’s check-in': 'Kamilisha ukaguzi wa leo',
-    'YOUR LEARNING JOURNEY': 'SAFARI YAKO YA KUJIFUNZA', 'Small steps.': 'Hatua ndogo.', 'Real progress.': 'Maendeleo halisi.', 'A simple, supportive path from curious beginner to confident builder.': 'Njia rahisi na ya kusaidia kutoka kwa mwanzishi mdadisi hadi mjenzi mwenye ujasiri.',
-    'Pick your path': 'Chagua njia yako', 'Choose a topic that matches your goals. Start with a free lesson to see if it feels right.': 'Chagua mada inayolingana na malengo yako. Anza na somo la bure uone kama linakufaa.', 'Learn by building': 'Jifunze kwa kutengeneza', 'Work through clear lessons, practice questions and examples that connect to real tasks.': 'Fuata masomo yaliyo wazi, maswali ya mazoezi na mifano inayohusiana na kazi halisi.', 'Track your growth': 'Fuatilia ukuaji wako', 'Keep track of completed lessons and work steadily toward finishing your course.': 'Fuatilia masomo uliyomaliza na endelea taratibu hadi umalize kozi yako.',
-    'BUILT FOR YOUR REALITY': 'IMEJENGWA KWA HALI YAKO HALISI', 'out of reach.': 'kuwa mbali na uwezo wako.', 'Find your first course': 'Tafuta kozi yako ya kwanza', 'Kenya-first pricing': 'Bei kwa Kenya kwanza', 'See course prices in Kenyan shillings before you make a decision.': 'Ona bei za kozi kwa shilingi za Kenya kabla ya kuamua.', 'Learn around your life': 'Jifunze kulingana na maisha yako', 'Practice, not just theory': 'Mazoezi, si nadharia tu', 'Progress you can see': 'Maendeleo unayoyaona',
-    'YOUR FUTURE IS WORTH INVESTING IN': 'MUSTAKABALI WAKO UNASTAHILI KUWEKEZA', 'Start with one lesson.': 'Anza na somo moja.', 'Build from there.': 'Jenga kutoka hapo.', 'Explore the course catalogue and take your first step today.': 'Tazama orodha ya kozi na uchukue hatua yako ya kwanza leo.',
-    'GOOD QUESTIONS': 'MASWALI MAZURI', 'Before you': 'Kabla ya', 'get started.': 'kuanza.', 'Can I try a lesson before paying?': 'Naweza kujaribu somo kabla ya kulipa?', 'Yes. Courses can include a free preview lesson. Open a course to see which lessons are available before enrolment.': 'Ndiyo. Kozi zinaweza kuwa na somo la bure la mfano. Fungua kozi uone masomo yanayopatikana kabla ya kujiandikisha.',
-    'How much do courses cost?': 'Kozi zinagharimu kiasi gani?', 'Do I need experience to start?': 'Je, ninahitaji uzoefu ili kuanza?', 'Start with a beginner-friendly course and follow the lessons in order. Each course description explains what you will learn.': 'Anza na kozi rafiki kwa wanaoanza na ufuate masomo kwa mpangilio. Maelezo ya kila kozi yanaeleza utakachojifunza.',
-    'Can I study on my phone?': 'Naweza kusoma kwa simu yangu?', 'How do payments work?': 'Malipo yanafanyaje kazi?', 'Do not pay outside the official checkout or share your M-Pesa PIN with anyone.': 'Usilipe nje ya mfumo rasmi wa malipo wala kumpa mtu yeyote PIN yako ya M-Pesa.', 'Will I get a certificate or a job?': 'Je, nitapata cheti au kazi?',
-    'Learn. Build. Get Hired.': 'Jifunze. Jenga. Ajiriwa.', 'Practical digital skills for your next chapter.': 'Ujuzi wa kidijitali wa vitendo kwa hatua yako ijayo.', 'Courses': 'Kozi', 'Student sign in': 'Mwanafunzi ingia', 'Built for learners. Rooted in possibility.': 'Imejengwa kwa wanafunzi. Imesimikwa kwenye fursa.',
-    // Learning Hub + results
-    'Today': 'Leo', 'Reviews': 'Marudio', 'Practice': 'Mazoezi', 'Cohorts': 'Makundi', 'My results': 'Matokeo yangu', 'Settings': 'Mipangilio',
-    'Day streak': 'Siku mfululizo', 'Best streak': 'Rekodi bora', 'Study days': 'Siku za kusoma', 'Check in for today': 'Jiandikishe leo', 'You are checked in for today.': 'Umejiandikisha leo.', 'Start reviewing': 'Anza marudio', 'Next question': 'Swali lijalo', 'Run my code': 'Endesha msimbo wangu', 'Join cohort': 'Jiunge na kundi', 'Leave': 'Ondoka', 'Full': 'Limejaa', 'Save for offline': 'Hifadhi kwa matumizi bila mtandao', 'Remove offline copy': 'Futa nakala ya nje ya mtandao', 'Data saver': 'Kiokoa data', 'Language': 'Lugha', 'Send code': 'Tuma msimbo', 'Verify': 'Thibitisha', 'Stop reminders': 'Acha vikumbusho',
-    'Our results, published honestly': 'Matokeo yetu, yanayochapishwa kwa uwazi', 'Learners': 'Wanafunzi', 'Lessons completed': 'Masomo yaliyokamilika', 'Certificates issued': 'Vyeti vilivyotolewa', 'Send M-Pesa request': 'Tuma ombi la M-Pesa'
-  };
-  const SW_ATTR = { 'Search by skill, topic, or course...': 'Tafuta kwa ujuzi, mada, au kozi...', 'Search courses by title, topic, or skill': 'Tafuta kozi kwa jina, mada, au ujuzi', 'Toggle navigation': 'Fungua/funga menyu' };
-  const SW_FAQ = { 'Each course displays its price in Kenyan shillings on the course card and course page. Check the current listing before making a payment.': 'Kila kozi inaonyesha bei yake kwa shilingi za Kenya kwenye kadi na ukurasa wa kozi. Angalia orodha ya sasa kabla ya kulipa.', 'The website is designed to adapt to mobile, tablet and desktop screens. A stable internet connection is recommended.': 'Tovuti imeundwa kufanya kazi kwenye simu, tablet na kompyuta. Mtandao thabiti unapendekezwa.', 'Certificate features depend on course completion and platform availability. Completing a course does not guarantee employment, income or a job placement.': 'Cheti kinategemea kukamilisha kozi. Kukamilisha kozi hakuhakikishi ajira, kipato wala nafasi ya kazi.', 'Payment options shown by the platform depend on what has been configured by the academy. Do not pay outside the official checkout or share your M-Pesa PIN with anyone.': 'Njia za malipo zinazoonyeshwa zinategemea mipangilio ya akademia. Usilipe nje ya mfumo rasmi wa malipo wala kumpa mtu yeyote PIN yako ya M-Pesa.' };
-  Object.assign(SW, SW_FAQ);
-  let translating = false;
-  function translate(root) {
-    if (lang !== 'sw') return; translating = true;
-    try {
-      const w = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT, { acceptNode: n => (n.parentNode && /^(SCRIPT|STYLE|TEXTAREA|CODE|PRE)$/.test(n.parentNode.nodeName)) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
-      const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
-      for (const n of nodes) { const t = n.nodeValue.trim(); if (t && SW[t]) n.nodeValue = n.nodeValue.replace(t, SW[t]); }
-      (root && root.querySelectorAll ? root : document).querySelectorAll('[placeholder],[aria-label]').forEach(e => { for (const a of ['placeholder', 'aria-label']) { const v = e.getAttribute(a); if (v && SW_ATTR[v]) e.setAttribute(a, SW_ATTR[v]); } });
-    } finally { translating = false; }
-  }
-  function startLanguage() {
-    document.documentElement.lang = lang === 'sw' ? 'sw' : 'en'; if (lang !== 'sw') return; translate(document.body);
-    new MutationObserver(ms => { if (translating) return; for (const m of ms) m.addedNodes.forEach(n => translate(n.nodeType === 1 ? n : n.parentNode)); }).observe(document.body, { childList: true, subtree: true });
-  }
-  function setLang(l) { LS.set('skillora.lang', l); location.reload(); }
+  const T = (en) => en; // identity — English-only interface
 
   // ================= Data saver =================
   const saveData = () => LS.get('skillora.datasaver') === '1' || (navigator.connection && navigator.connection.saveData);
@@ -88,7 +41,6 @@
   window.header = function () {
     baseHeader.apply(this, arguments); const nav = el('#nav'); if (!nav) return;
     if (me) { const b = document.createElement('button'); b.className = 'nav-btn'; b.id = 'nav-hub'; b.textContent = 'Learning Hub'; b.onclick = () => hub('today'); const d = el('#nav-dashboard'); nav.insertBefore(b, d || nav.firstChild); }
-    const l = document.createElement('button'); l.className = 'nav-btn lang-btn'; l.id = 'nav-lang'; l.setAttribute('aria-label', lang === 'sw' ? 'Switch to English' : 'Badilisha kwa Kiswahili'); l.textContent = lang === 'sw' ? 'EN' : 'SW'; l.onclick = () => setLang(lang === 'sw' ? 'en' : 'sw'); nav.appendChild(l);
   };
 
   // ================= Learning Hub =================
@@ -182,13 +134,12 @@
     shell('settings', `<div class="cc-grid">
       <article class="cc-card"><h3>SMS study reminders</h3>${!rem.sms_available ? '<p class="muted">SMS reminders are not switched on for this academy yet.</p>' : rem.verified && rem.sms_opt_in ? `<p>Reminders go to <b>${esc(rem.phone)}</b> at ${esc(rem.reminder_time)}.</p><button class="course-open" id="sms-stop">${T('Stop reminders')}</button>` : `<p class="muted">We text you once a day only if you have not studied. Verify your number to turn it on.</p><form id="sms-form"><label>Safaricom / Airtel number<input name="phone" type="tel" placeholder="0712345678" autocomplete="tel" required></label><button class="btn-solid" type="submit">${T('Send code')}</button></form><form id="sms-verify" hidden><label>6-digit code<input name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required></label><button class="btn-solid" type="submit">${T('Verify')}</button></form>`}<p id="sms-msg" class="cc-toast" role="status"></p></article>
       <article class="cc-card"><h3>Offline library</h3><p class="muted">Save a course on this device to read its lessons without internet. Remove it any time; it is cleared when you sign out.</p>${courses.length ? courses.map(c => `<p><b>${esc(c.title)}</b><br>${idx.includes(c.slug) ? `<button class="course-open" data-rm="${esc(c.slug)}">${T('Remove offline copy')}</button>` : `<button class="course-open" data-sv="${esc(c.slug)}">${T('Save for offline')}</button>`}</p>`).join('') : '<p class="muted">Enrol in a course to save it for offline study.</p>'}<p id="off-msg" class="cc-toast" role="status"></p></article>
-      <article class="cc-card"><h3>${T('Data saver')}</h3><p class="muted">Turns off decorative animation and effects to use less data and battery.</p><label class="cc-check"><input type="checkbox" id="ds-toggle" ${saveData() ? 'checked' : ''}> ${T('Data saver')}</label><h3 style="margin-top:18px">${T('Language')}</h3><div class="cc-btns"><button class="course-open" id="lang-en" ${lang === 'en' ? 'disabled' : ''}>English</button><button class="course-open" id="lang-sw" ${lang === 'sw' ? 'disabled' : ''}>Kiswahili</button></div><p class="muted">Menus and the home page are translated. Course lessons are in English.</p></article></div>`); bindTabs();
+      <article class="cc-card"><h3>${T('Data saver')}</h3><p class="muted">Turns off decorative animation and effects to use less data and battery.</p><label class="cc-check"><input type="checkbox" id="ds-toggle" ${saveData() ? 'checked' : ''}> ${T('Data saver')}</label></article></div>`); bindTabs();
     if (el('#sms-form')) { el('#sms-form').onsubmit = async e => { e.preventDefault(); try { await api('/reminders/phone', 'POST', { phone: new FormData(e.target).get('phone') }); el('#sms-verify').hidden = false; msg('#sms-msg', 'Code sent. Enter it below.'); } catch (x) { msg('#sms-msg', x.message, true); } }; el('#sms-verify').onsubmit = async e => { e.preventDefault(); try { await api('/reminders/verify', 'POST', { code: new FormData(e.target).get('code') }); settings(); } catch (x) { msg('#sms-msg', x.message, true); } }; }
     if (el('#sms-stop')) el('#sms-stop').onclick = async () => { await api('/reminders/stop', 'POST'); settings(); };
     document.querySelectorAll('[data-sv]').forEach(b => b.onclick = async () => { b.disabled = true; try { await saveCourseOffline(b.dataset.sv); settings(); } catch (e) { msg('#off-msg', e.message, true); b.disabled = false; } });
     document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { removeCourseOffline(b.dataset.rm); settings(); });
     el('#ds-toggle').onchange = e => { LS.set('skillora.datasaver', e.target.checked ? '1' : '0'); applyDataSaver(); };
-    el('#lang-en').onclick = () => setLang('en'); el('#lang-sw').onclick = () => setLang('sw');
   }
 
   // ================= M-Pesa checkout (replaces the placeholder buy handler) =================
@@ -213,10 +164,10 @@
       const r = await fetch('/api/results').then(x => x.json()); const o = r.verified_outcomes_total;
       const sec = document.createElement('section'); sec.className = 'results-section'; sec.id = 'results-section'; sec.setAttribute('aria-labelledby', 'results-h');
       sec.innerHTML = `<h2 id="results-h">${T('Our results, published honestly')}</h2><div class="cc-tiles"><div class="cc-tile"><b>${Number(r.learners).toLocaleString()}</b><span>${T('Learners')}</span></div><div class="cc-tile"><b>${Number(r.lessons_completed).toLocaleString()}</b><span>${T('Lessons completed')}</span></div><div class="cc-tile"><b>${Number(r.certificates_issued).toLocaleString()}</b><span>${T('Certificates issued')}</span></div>${r.completion_rate_percent !== null ? `<div class="cc-tile"><b>${r.completion_rate_percent}%</b><span>of enrolled learners completed a course</span></div>` : ''}</div><p class="muted">${o ? `${o} verified learner outcome${o === 1 ? '' : 's'}: ${Object.values(r.verified_outcomes).map(x => `${x.count} × ${esc(x.label.toLowerCase())}`).join(', ')}.` : 'We will publish verified learner outcomes here (first clients, interviews, jobs) as learners report them and our team checks them.'} ${esc(r.note)}</p>`;
-      strip.insertAdjacentElement('afterend', sec); translate(sec);
+      strip.insertAdjacentElement('afterend', sec);
     } catch { /* optional */ }
   }
 
-  applyDataSaver(); startLanguage(); homeResults();
-  window.header(); // re-run so the Learning Hub button and language switch appear
+  applyDataSaver(); homeResults();
+  window.header(); // re-run so the Learning Hub button appears
 })();

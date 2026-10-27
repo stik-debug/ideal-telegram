@@ -14,3 +14,12 @@
 - Run browser-level tests across guest, learner, instructor and administrator roles.
 - Verify live payment provider webhooks, database persistence, backups/restores, email delivery and AI provider credentials before public launch.
 - These changes and automated tests do not imply live deployment or full production readiness.
+
+
+## 2026-10-27 follow-up polish
+- Removed Kiswahili / Swahili interface (language toggle, translation dictionary, settings card) — site is English-only.
+- Loaded DM Sans + Manrope from Google Fonts with preconnect (fonts were referenced but not previously loaded).
+- Added light/dark theme with system preference detection, persistent toggle, and dual `theme-color` meta tags.
+- Expanded SEO: canonical URL, Open Graph image, Twitter large card, keywords, JSON-LD `EducationalOrganization`.
+- Added back-to-top control, global toast helper, `:focus-visible` emphasis, `prefers-reduced-motion` support, and print styles.
+- Updated `robots.txt` and added `sitemap.xml`.

@@ -143,3 +143,138 @@ html.data-saver .hero-visual,html.data-saver .code-card,html.data-saver [class*=
 .view-shell .panel,.view-shell .cc-grid>*{min-width:0}.cc-table-wrap{max-width:100%;width:100%}
 .view-shell h1[tabindex="-1"]:focus{outline:none}
 .cc-table-wrap{position:relative}
+
+
+/* ========== World-class polish: dark mode, a11y, motion, back-to-top ========== */
+:root {
+  --ink: #112a25;
+  --muted: #61746e;
+  --green: #0c4b3d;
+  --green2: #08745a;
+  --mint: #baf3d9;
+  --gold: #e7bb59;
+  --paper: #f7f8f4;
+  --line: #e3e9e4;
+  --white: #fff;
+  --shadow: 0 18px 55px #12352a0d;
+  --card: #fff;
+  --header-bg: #fff;
+  --code-bg: #0d2a24;
+}
+
+html[data-theme="dark"] {
+  --ink: #e8f0ec;
+  --muted: #9bb0a8;
+  --green: #1a6b58;
+  --green2: #3ecf9a;
+  --mint: #1a3d32;
+  --gold: #e7bb59;
+  --paper: #0c1814;
+  --line: #1e332c;
+  --white: #13241e;
+  --shadow: 0 18px 55px #00000055;
+  --card: #13241e;
+  --header-bg: #0f1f1a;
+  --code-bg: #081512;
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] body { background: var(--paper); color: var(--ink); }
+html[data-theme="dark"] .site-header { background: var(--header-bg); border-bottom-color: var(--line); }
+html[data-theme="dark"] .nav-btn { background: var(--card); border-color: var(--line); color: var(--green2); }
+html[data-theme="dark"] .nav-btn.primary { background: var(--green2); color: #0c1814; border-color: var(--green2); }
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .dashboard-course,
+html[data-theme="dark"] .cc-card,
+html[data-theme="dark"] .course-card,
+html[data-theme="dark"] .faq details,
+html[data-theme="dark"] .float-card { background: var(--card); border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  background: #0c1814;
+  color: var(--ink);
+  border-color: var(--line);
+}
+html[data-theme="dark"] .hero { background: #061612; }
+html[data-theme="dark"] .stats-strip { background: var(--card); border-color: var(--line); }
+html[data-theme="dark"] footer.site-footer { background: #061612; color: #c5d8d0; }
+html[data-theme="dark"] .code-window { background: var(--code-bg); }
+html[data-theme="dark"] .menu-toggle { background: var(--card); color: var(--ink); border-color: var(--line); }
+
+/* Theme toggle button */
+.theme-toggle {
+  border: 1px solid var(--line);
+  background: var(--header-bg, #fff);
+  color: var(--ink);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  transition: background .2s, border-color .2s, transform .15s;
+}
+.theme-toggle:hover { border-color: var(--green2); transform: scale(1.04); }
+.theme-toggle:focus-visible { outline: 2px solid var(--green2); outline-offset: 2px; }
+
+/* Back to top */
+.back-to-top {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 40;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: var(--green);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  box-shadow: 0 10px 28px #0c4b3d44;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition: opacity .25s, transform .25s;
+}
+.back-to-top.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.back-to-top:hover { background: var(--green2); }
+.back-to-top:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+/* Prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .back-to-top { transition: none; }
+  .pulse { animation: none; }
+}
+
+/* Stronger focus for keyboard users */
+:focus-visible {
+  outline: 2px solid var(--green2);
+  outline-offset: 3px;
+}
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible) { outline: none; }
+
+/* Selection color */
+::selection { background: #baf3d9; color: #0c4b3d; }
+html[data-theme="dark"] ::selection { background: #1a6b58; color: #e8f0ec; }
+
+/* Print: hide chrome, show content */
+@media print {
+  .site-header, .menu-toggle, .back-to-top, .theme-toggle, .hero-glow, #nav, .site-footer { display: none !important; }
+  body { background: #fff; color: #000; }
+  a { text-decoration: underline; }
+}

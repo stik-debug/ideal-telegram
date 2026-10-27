@@ -35,5 +35,5 @@ Real payment provider + webhook testing, HTTPS with `COOKIE_SECURE=true`, a pers
 - **Public results** on the home page come from live records. Learner outcomes are counted only after an admin verifies them in Control Center > Community & outcomes. The completion rate stays hidden until 30 learners are enrolled.
 - **Cohorts and mentor clinics** can be created in Control Center > Community & outcomes.
 - **SMS reminders** (Africa's Talking): opt-in, number verified by a one-time code, one text per day at 6 pm Kenya time only if the learner has not studied. Off until `AT_USERNAME`/`AT_API_KEY` are set.
-- **Offline library** (save an enrolled course to the device, cleared on sign-out), **data saver** mode, and a **Kiswahili interface** (menus and home page; course lessons remain English - have a native speaker review the wording).
+- **Offline library** (save an enrolled course to the device, cleared on sign-out) and **data saver** mode.
 - **AI tutor caps**: `AI_DAILY_PER_USER` and `AI_DAILY_TOTAL` stop runaway spending.

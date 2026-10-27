@@ -34,7 +34,7 @@ Run `npm test`, then test signup/login, locked paid lesson access, payment callb
 - Admin quality report with real database counts for active learners, quiz performance, refunds, support, reports, scholarships and clinics.
 - Verified SQLite snapshot backup command: `npm run backup` (requires `DB_FILE` to point at the persistent database; set `BACKUP_DIR` to choose the output folder).
 - Student dashboard controls for learning path, scholarship application, mentor clinics, business challenges and content reports.
-- No Swahili-language support was added.
+- Swahili interface was removed; the product is English-only.
 
 ## Still requires real integrations / owner operations
 - A real AI-provider adapter and server-side API key; current tutor is transparent guided fallback without that adapter.
@@ -68,7 +68,7 @@ Run `npm test`, then test signup/login, locked paid lesson access, payment callb
 - Notification preferences and in-app queue storage exist, but a production scheduler/worker and email/push provider adapters are still required for automatic delivery. No external messages are sent by this package.
 - Career recommendations are a transparent baseline (published courses not yet enrolled in), not an AI-based or labor-market-verified recommender. Career opportunities must be published from genuine sources.
 - Retention metrics currently use available event timestamps and the application's UTC date conventions. Before production, standardize timezone handling, add cohort-specific week-1/week-4 definitions, and audit data retention/privacy requirements.
-- No Swahili support was added.
+- Swahili interface removed (English-only).
 
 ## Learner return-and-progress upgrade (2026-10-26)
 - Added a responsive daily learning check-in panel to the course catalogue.
