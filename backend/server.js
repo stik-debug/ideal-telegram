@@ -14,9 +14,13 @@ function createApp(env = process.env) {
   }
   console.log('[Skillora] SQLite database path:', require('path').resolve(dbFile));
   const secret = env.PAYMENT_WEBHOOK_SECRET || '';
-  const hits = new Map();
+  const hits = new Map(), failures = new Map();
+  // Housekeeping: purge expired sessions and stale rate-limit entries (timer does not keep the process alive).
+  const sweep = () => { try { db.prepare('DELETE FROM sessions WHERE exp<?').run(Date.now()); } catch {} const now = Date.now(); for (const [k, a] of hits) if (!a.some(t => now - t < 60000)) hits.delete(k); for (const [k, v] of failures) if (now - v.t > 15 * 60000) failures.delete(k); };
+  sweep(); setInterval(sweep, 600000).unref();
   const limited = (key, max = 10) => { const now = Date.now(), a = (hits.get(key) || []).filter(t => now - t < 60000); a.push(now); hits.set(key, a); return a.length > max; };
-  const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', ...headers }); res.end(JSON.stringify(obj)); };
+  const secHeaders = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()', 'Cross-Origin-Opener-Policy': 'same-origin', ...(env.COOKIE_SECURE === 'true' ? { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' } : {}) };
+  const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...secHeaders, ...headers }); res.end(JSON.stringify(obj)); };
   const err = (res, code, msg) => send(res, code, { error: msg });
   const certificatePdf = (student, course, code, issued) => {
     // A dependency-free, one-page PDF certificate with a verifiable unique code.
@@ -83,8 +87,16 @@ function createApp(env = process.env) {
   });
   R('POST', '/api/login', (c) => {
     if (limited('login' + c.ip)) return err(c.res, 429, 'Too many attempts');
-    const u = db.prepare('SELECT * FROM users WHERE email=?').get(String(c.body.email || '').toLowerCase());
-    if (!u || !verify(String(c.body.password || ''), u.pass_hash)) return err(c.res, 401, 'Invalid email or password');
+    const em = String(c.body.email || '').toLowerCase().slice(0, 200), f = failures.get(em);
+    if (f && f.n >= 5 && Date.now() - f.t < 15 * 60000) return err(c.res, 429, 'Too many failed attempts for this account. Try again in 15 minutes.');
+    const u = db.prepare('SELECT * FROM users WHERE email=?').get(em);
+    if (!u || !verify(String(c.body.password || ''), u.pass_hash)) {
+      failures.set(em, { n: (f && Date.now() - f.t < 15 * 60000 ? f.n : 0) + 1, t: Date.now() });
+      if (u && u.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(u.id, 'login.failed', em, 'Wrong password for an admin account');
+      return err(c.res, 401, 'Invalid email or password');
+    }
+    failures.delete(em);
+    if (u.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(u.id, 'login.admin', em, '');
     newSession(c.res, u.id, { ok: true });
   });
   R('POST', '/api/logout', (c) => { db.prepare('DELETE FROM sessions WHERE token=?').run(cookie(c.req, 'sid')); send(c.res, 200, { ok: true }, { 'Set-Cookie': 'sid=; Max-Age=0; Path=/' }); });
@@ -398,6 +410,20 @@ function createApp(env = process.env) {
   R('PUT','/api/admin/instructors/:id',admin((c,id)=>{const status=String(c.body.status||''),note=String(c.body.admin_note||'').slice(0,1000);if(!['approved','rejected'].includes(status))return err(c.res,400,'Status must be approved or rejected');const r=db.prepare('UPDATE instructor_applications SET status=?,admin_note=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status=\'pending\'').run(status,note,c.user.id,Number(id));if(!r.changes)return err(c.res,404,'Pending instructor application not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'instructor.'+status,String(id),note);send(c.res,200,{ok:true,status});}));
 
 
+
+  R('POST', '/api/account/password', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    if (limited('pw' + c.user.id, 5)) return err(c.res, 429, 'Too many attempts');
+    const cur = String(c.body.current_password || ''), nw = String(c.body.new_password || '');
+    if (nw.length < 10 || nw.length > 200) return err(c.res, 400, 'New password must be 10-200 characters');
+    if (nw === cur) return err(c.res, 400, 'Choose a different password from the current one');
+    const u = db.prepare('SELECT pass_hash FROM users WHERE id=?').get(c.user.id);
+    if (!verify(cur, u.pass_hash)) return err(c.res, 403, 'Current password is incorrect');
+    db.prepare('UPDATE users SET pass_hash=? WHERE id=?').run(hash(nw), c.user.id);
+    db.prepare('DELETE FROM sessions WHERE user_id=? AND token!=?').run(c.user.id, cookie(c.req, 'sid')); // sign out every other device
+    if (c.user.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, 'password.change', c.user.email, 'Other sessions revoked');
+    send(c.res, 200, { ok: true });
+  });
   // ---- Control Center upgrades: announcements, user/role management, CSV exports, system health ----
   const audit = (c, action, target, detail = '') => db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, action, String(target), String(detail).slice(0, 500));
   R('GET', '/api/announcement', (c) => send(c.res, 200, db.prepare('SELECT id,message,level FROM announcements WHERE active=1 ORDER BY id DESC LIMIT 1').get() || null));
@@ -444,6 +470,7 @@ function createApp(env = process.env) {
         { label: 'Secure cookies (HTTPS)', ok: env.COOKIE_SECURE === 'true', fix: 'Set COOKIE_SECURE=true when the site is served over HTTPS.' },
         { label: 'Public URL set (referral links)', ok: !!env.PUBLIC_URL, fix: 'Set PUBLIC_URL to your site address.' },
         { label: 'AI tutor key configured', ok: !!env.OPENAI_API_KEY, fix: 'Optional: set OPENAI_API_KEY to enable AI answers; otherwise guided steps are used.' },
+        { label: 'Default demo owner account removed', ok: !db.prepare("SELECT 1 x FROM users WHERE email='owner@skillora.local'").get(), fix: 'Sign in as your real owner, then change role/password of owner@skillora.local (or set OWNER_EMAIL).' },
         { label: 'Database is persistent', ok: dbFile !== ':memory:', fix: 'Point DB_FILE at a persistent disk.' }
       ],
       attention: { pending_assignments: n("SELECT COUNT(*) n FROM assignments WHERE status='submitted'"), open_tickets: n("SELECT COUNT(*) n FROM support_tickets WHERE status!='resolved'"), pending_gigs: n("SELECT COUNT(*) n FROM freelance_gigs WHERE status='pending'"), pending_employers: n("SELECT COUNT(*) n FROM employer_profiles WHERE verification_status='pending'"), pending_instructors: n("SELECT COUNT(*) n FROM instructor_applications WHERE status='pending'"), pending_scholarships: n("SELECT COUNT(*) n FROM scholarship_applications WHERE status='pending'"), open_reports: n("SELECT COUNT(*) n FROM abuse_reports WHERE status='open'"), pending_memberships: n("SELECT COUNT(*) n FROM membership_requests WHERE status='pending'") },
@@ -456,8 +483,8 @@ function createApp(env = process.env) {
       const url = new URL(req.url, 'http://x');
       if (!url.pathname.startsWith('/api') && url.pathname !== '/health' && req.method === 'GET') {
         const f = path.join(pub, (url.pathname === '/' || url.pathname === '/admin' || url.pathname === '/control-center') ? 'index.html' : path.normalize(url.pathname));
-        if (!f.startsWith(pub) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end('Not found'); }
-        res.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' }[path.extname(f)] || 'text/plain', 'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'" });
+        if (!f.startsWith(pub + path.sep) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end('Not found'); }
+        res.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' }[path.extname(f)] || 'text/plain', ...secHeaders, 'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" });
         return fs.createReadStream(f).pipe(res);
       }
       const raw = req.method === 'GET' ? '' : await readBody(req);

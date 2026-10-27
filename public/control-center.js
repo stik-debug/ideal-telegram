@@ -81,7 +81,8 @@
         <article class="cc-card"><h3>Export data (CSV)</h3><p class="muted">Download records for bookkeeping or backup. Exports are logged in the audit trail.</p><div class="cc-btns">${exportsHtml}</div></article>
         <article class="cc-card"><h3>System health</h3><ul class="cc-checks">${checks}</ul><p class="muted">Server uptime ${fmt(health.uptime_minutes)} min · Node ${esc(health.node)} · Database ${health.database_ok ? 'responding' : 'NOT responding'} (${health.database_mb} MB${health.in_memory ? ', in-memory' : ''}).</p></article>
       </div>
-      <h3 style="margin-top:22px">Users & admin access</h3><p class="muted">Grant or remove owner/admin access. You cannot remove your own access, and one admin must always remain.</p>
+<article class="cc-card" style="margin-top:16px;max-width:420px"><h3>Change my password</h3><p class="muted">Signs you out on every other device.</p><form id="cc-pw-form"><label>Current password<input type="password" name="current_password" autocomplete="current-password" required></label><label>New password (10+ characters)<input type="password" name="new_password" autocomplete="new-password" minlength="10" required></label><button class="btn-solid" type="submit">Update password</button></form></article>
+            <h3 style="margin-top:22px">Users & admin access</h3><p class="muted">Grant or remove owner/admin access. You cannot remove your own access, and one admin must always remain.</p>
       <label class="cc-search">Search users<input id="cc-user-search" type="search" placeholder="Name or email…" autocomplete="off"></label>
       <div class="cc-table-wrap"><table class="cc-table"><caption class="sr-only">All user accounts</caption><thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Courses</th><th scope="col">Lessons</th><th scope="col">Role</th></tr></thead><tbody id="cc-users"></tbody></table></div><p id="cc-user-count" class="muted" role="status"></p></section>`;
 
@@ -108,6 +109,7 @@
       try { await api('/admin/announcement', 'PUT', { message: f.get('message'), level: f.get('level'), active: f.get('active') === 'on' }); toast(f.get('active') === 'on' ? 'Announcement published.' : 'Announcement hidden.'); }
       catch (ex) { toast(ex.message, true); }
     };
+    q('#cc-pw-form').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); try { await api('/account/password', 'POST', { current_password: f.get('current_password'), new_password: f.get('new_password') }); e.target.reset(); toast('Password updated. Other devices were signed out.'); } catch (ex) { toast(ex.message, true); } };
     q('#cc-refresh').onclick = () => window.adminDash();
 
     // Student/enrolment search on the existing panel

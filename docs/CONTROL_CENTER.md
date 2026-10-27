@@ -16,3 +16,14 @@
 - Student/enrolment filter box.
 
 All new endpoints are admin-only (`/api/admin/health|users|users/:id/role|export/:kind|announcement`); `GET /api/announcement` is public by design.
+
+## Security hardening (this release)
+- Headers on every response: stricter CSP (`frame-ancestors 'none'`, `object-src 'none'`, `base-uri`/`form-action` self), X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, HSTS when `COOKIE_SECURE=true`; API responses are `no-store`.
+- Static file path check tightened against sibling-directory traversal.
+- Per-account lockout: 5 wrong passwords locks that email for 15 minutes (on top of the per-IP limit). Admin sign-ins and failed admin attempts are written to the audit log.
+- **Change my password** card in the Control Center; changing it signs out all other devices.
+- Expired sessions and stale rate-limit entries are purged automatically.
+- Health check warns until the demo `owner@skillora.local` account is replaced.
+
+## Still required before real launch (not done by code alone)
+Real payment provider + webhook testing, HTTPS with `COOKIE_SECURE=true`, a persistent `DB_FILE` with tested backups, email verification/password recovery, and a browser/mobile test pass.

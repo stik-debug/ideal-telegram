@@ -196,3 +196,21 @@ test('control center: owner bootstrap, admin-only tools, role safeguards, CSV ex
     assert.equal((await oc('/api/announcement')).j, null);
   } finally { owner.server.close(); }
 });
+
+test('hardening: security headers, account lockout, password change revokes other sessions', async () => {
+  const h = createApp({ DB_FILE: ':memory:' }); await new Promise(r => h.server.listen(0, r)); const hb = 'http://127.0.0.1:' + h.server.address().port;
+  const hc = async (path, method = 'GET', body, cookie) => { const r = await fetch(hb + path, { method, headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { s: r.status, c: (r.headers.get('set-cookie') || '').split(';')[0], h: r.headers }; };
+  try {
+    const r = await hc('/'); assert.equal(r.h.get('x-frame-options'), 'DENY'); assert.match(r.h.get('content-security-policy'), /frame-ancestors 'none'/);
+    assert.equal((await hc('/api/courses')).h.get('cache-control'), 'no-store');
+    assert.equal((await hc('/..%2fbackend%2fserver.js')).s, 404);
+    for (const e of ['lock@x.com', 'pw@x.com']) h.db.prepare("INSERT INTO users(email,name,pass_hash) VALUES(?,?,?)").run(e, 'T', hash('longpassword1'));
+    for (let i = 0; i < 5; i++) assert.equal((await hc('/api/login', 'POST', { email: 'lock@x.com', password: 'wrongwrong' + i })).s, 401);
+    assert.equal((await hc('/api/login', 'POST', { email: 'lock@x.com', password: 'longpassword1' })).s, 429);
+    const a = (await hc('/api/login', 'POST', { email: 'pw@x.com', password: 'longpassword1' })).c, b = (await hc('/api/login', 'POST', { email: 'pw@x.com', password: 'longpassword1' })).c;
+    assert.equal((await hc('/api/account/password', 'POST', { current_password: 'nope-nope-nope', new_password: 'brandnewpass1' }, a)).s, 403);
+    assert.equal((await hc('/api/account/password', 'POST', { current_password: 'longpassword1', new_password: 'short' }, a)).s, 400);
+    assert.equal((await hc('/api/account/password', 'POST', { current_password: 'longpassword1', new_password: 'brandnewpass1' }, a)).s, 200);
+    assert.equal((await hc('/api/me', 'GET', null, b)).s, 401); assert.equal((await hc('/api/me', 'GET', null, a)).s, 200);
+  } finally { h.server.close(); }
+});
