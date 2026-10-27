@@ -182,3 +182,8 @@ Before deployment, back up the persistent database and deploy against the same d
 - After deployment, sign in with the owner account, open **Admin dashboard**, inspect learner/course counts and verify a test learner's saved progress survives a restart/redeploy.
 - Do not promote arbitrary accounts to admin. Use a controlled deployment shell/console, strong unique password, HTTPS and restricted operator access.
 - The owner dashboard is hidden from regular student accounts by design. If the current owner account is marked `student`, run the admin script against the existing production database; do not create a replacement database.
+
+
+## Owner Control Center access
+
+Open `/admin` and sign in with an admin account. Set `OWNER_EMAIL` + `OWNER_PASSWORD` in the environment to guarantee an owner account at startup. Details: [`docs/CONTROL_CENTER.md`](docs/CONTROL_CENTER.md).

@@ -4,6 +4,14 @@ const { open } = require('./db'); const { hash, verify } = require('./auth');
 function createApp(env = process.env) {
   const dbFile = env.DB_FILE || './data/skillforge.db';
   const db = open(dbFile);
+  // Owner bootstrap: set OWNER_EMAIL and OWNER_PASSWORD (10+ chars) to guarantee an admin account exists at startup.
+  // A new account is created with that password; an existing account is only promoted (its password is never overwritten).
+  if (env.OWNER_EMAIL && env.OWNER_PASSWORD && String(env.OWNER_PASSWORD).length >= 10) {
+    const oe = String(env.OWNER_EMAIL).trim().toLowerCase();
+    const ex = db.prepare('SELECT id,role FROM users WHERE email=?').get(oe);
+    if (!ex) { db.prepare("INSERT INTO users(email,name,pass_hash,role) VALUES(?,?,?,'admin')").run(oe, env.OWNER_NAME || 'Academy Owner', hash(String(env.OWNER_PASSWORD))); console.log('[Skillora] Owner account created for', oe); }
+    else if (ex.role !== 'admin') { db.prepare("UPDATE users SET role='admin' WHERE id=?").run(ex.id); console.log('[Skillora] Existing account promoted to owner/admin:', oe); }
+  }
   console.log('[Skillora] SQLite database path:', require('path').resolve(dbFile));
   const secret = env.PAYMENT_WEBHOOK_SECRET || '';
   const hits = new Map();
@@ -389,11 +397,65 @@ function createApp(env = process.env) {
   R('PUT','/api/admin/employers/:userId',admin((c,userId)=>{const status=String(c.body.status||'');if(!['verified','rejected'].includes(status))return err(c.res,400,'Status must be verified or rejected');const r=db.prepare('UPDATE employer_profiles SET verification_status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE user_id=?').run(status,c.user.id,Number(userId));if(!r.changes)return err(c.res,404,'Employer profile not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'employer.'+status,String(userId),'');send(c.res,200,{ok:true,status});}));
   R('PUT','/api/admin/instructors/:id',admin((c,id)=>{const status=String(c.body.status||''),note=String(c.body.admin_note||'').slice(0,1000);if(!['approved','rejected'].includes(status))return err(c.res,400,'Status must be approved or rejected');const r=db.prepare('UPDATE instructor_applications SET status=?,admin_note=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status=\'pending\'').run(status,note,c.user.id,Number(id));if(!r.changes)return err(c.res,404,'Pending instructor application not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'instructor.'+status,String(id),note);send(c.res,200,{ok:true,status});}));
 
+
+  // ---- Control Center upgrades: announcements, user/role management, CSV exports, system health ----
+  const audit = (c, action, target, detail = '') => db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, action, String(target), String(detail).slice(0, 500));
+  R('GET', '/api/announcement', (c) => send(c.res, 200, db.prepare('SELECT id,message,level FROM announcements WHERE active=1 ORDER BY id DESC LIMIT 1').get() || null));
+  R('GET', '/api/admin/announcement', admin((c) => send(c.res, 200, db.prepare('SELECT id,message,level,active,created FROM announcements ORDER BY id DESC LIMIT 1').get() || null)));
+  R('PUT', '/api/admin/announcement', admin((c) => {
+    const message = String(c.body.message || '').trim().slice(0, 300), level = String(c.body.level || 'info'), active = c.body.active ? 1 : 0;
+    if (!['info', 'success', 'warning'].includes(level)) return err(c.res, 400, 'Level must be info, success or warning');
+    if (active && message.length < 3) return err(c.res, 400, 'Write a message of at least 3 characters');
+    db.prepare('UPDATE announcements SET active=0').run();
+    const r = db.prepare('INSERT INTO announcements(message,level,active,created_by) VALUES(?,?,?,?)').run(message, level, active, c.user.id);
+    audit(c, active ? 'announcement.publish' : 'announcement.hide', Number(r.lastInsertRowid), message); send(c.res, 200, { ok: true });
+  }));
+  R('GET', '/api/admin/users', admin((c) => send(c.res, 200, db.prepare("SELECT u.id,u.email,u.name,u.role,u.created,(SELECT COUNT(*) FROM progress WHERE user_id=u.id) lessons_done,(SELECT COUNT(*) FROM enrollments WHERE user_id=u.id) courses FROM users u ORDER BY (u.role='admin') DESC,u.id DESC LIMIT 500").all())));
+  R('PUT', '/api/admin/users/:id/role', admin((c, id) => {
+    const role = String(c.body.role || ''), uid = Number(id);
+    if (!['student', 'admin'].includes(role)) return err(c.res, 400, 'Role must be student or admin');
+    const u = db.prepare('SELECT id,email,role FROM users WHERE id=?').get(uid); if (!u) return err(c.res, 404, 'User not found');
+    if (u.id === c.user.id && role !== 'admin') return err(c.res, 400, 'You cannot remove your own admin access');
+    if (u.role === 'admin' && role !== 'admin' && db.prepare("SELECT COUNT(*) n FROM users WHERE role='admin'").get().n <= 1) return err(c.res, 400, 'At least one admin must remain');
+    db.prepare('UPDATE users SET role=? WHERE id=?').run(role, uid); audit(c, 'user.role', u.email, `${u.role} -> ${role}`); send(c.res, 200, { ok: true });
+  }));
+  const csvCell = (v) => { let t = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; };
+  const exports_ = {
+    students: "SELECT u.id,u.name,u.email,u.role,u.created,(SELECT COUNT(*) FROM enrollments WHERE user_id=u.id) courses,(SELECT COUNT(*) FROM progress WHERE user_id=u.id) lessons_done FROM users u ORDER BY u.id",
+    payments: "SELECT p.id,p.ref,u.email,p.course_id,p.amount_kes,p.provider,p.status,p.created FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id",
+    enrolments: "SELECT e.created,u.name,u.email,c.title course FROM enrollments e JOIN users u ON u.id=e.user_id JOIN courses c ON c.id=e.course_id ORDER BY e.created",
+    certificates: "SELECT ce.code,ce.issued,u.name,u.email,c.title course FROM certificates ce JOIN users u ON u.id=ce.user_id JOIN courses c ON c.id=ce.course_id ORDER BY ce.issued",
+    audit: "SELECT a.id,a.created,COALESCE(u.email,'System') actor,a.action,a.target,a.detail FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 5000"
+  };
+  R('GET', '/api/admin/export/:kind', admin((c, kind) => {
+    const q = exports_[kind]; if (!q) return err(c.res, 404, 'Unknown export');
+    const rows = db.prepare(q).all(), cols = rows.length ? Object.keys(rows[0]) : [];
+    const csv = [cols.join(',')].concat(rows.map(r => cols.map(k => csvCell(r[k])).join(','))).join('\r\n');
+    audit(c, 'export.' + kind, kind, rows.length + ' rows');
+    c.res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="skillora-${kind}-${new Date().toISOString().slice(0, 10)}.csv"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' }); c.res.end('\ufeff' + csv);
+  }));
+  R('GET', '/api/admin/health', admin((c) => {
+    const n = (q) => db.prepare(q).get().n, pageCount = db.prepare('PRAGMA page_count').get().page_count, pageSize = db.prepare('PRAGMA page_size').get().page_size;
+    send(c.res, 200, {
+      server_time: new Date().toISOString(), uptime_minutes: Math.round(process.uptime() / 60), node: process.version,
+      database_ok: db.prepare('SELECT 1 x').get().x === 1, database_mb: Math.round(pageCount * pageSize / 1048576 * 10) / 10, in_memory: dbFile === ':memory:',
+      checks: [
+        { label: 'Payment webhook secret configured', ok: !!env.PAYMENT_WEBHOOK_SECRET, fix: 'Set PAYMENT_WEBHOOK_SECRET before accepting real payments.' },
+        { label: 'Secure cookies (HTTPS)', ok: env.COOKIE_SECURE === 'true', fix: 'Set COOKIE_SECURE=true when the site is served over HTTPS.' },
+        { label: 'Public URL set (referral links)', ok: !!env.PUBLIC_URL, fix: 'Set PUBLIC_URL to your site address.' },
+        { label: 'AI tutor key configured', ok: !!env.OPENAI_API_KEY, fix: 'Optional: set OPENAI_API_KEY to enable AI answers; otherwise guided steps are used.' },
+        { label: 'Database is persistent', ok: dbFile !== ':memory:', fix: 'Point DB_FILE at a persistent disk.' }
+      ],
+      attention: { pending_assignments: n("SELECT COUNT(*) n FROM assignments WHERE status='submitted'"), open_tickets: n("SELECT COUNT(*) n FROM support_tickets WHERE status!='resolved'"), pending_gigs: n("SELECT COUNT(*) n FROM freelance_gigs WHERE status='pending'"), pending_employers: n("SELECT COUNT(*) n FROM employer_profiles WHERE verification_status='pending'"), pending_instructors: n("SELECT COUNT(*) n FROM instructor_applications WHERE status='pending'"), pending_scholarships: n("SELECT COUNT(*) n FROM scholarship_applications WHERE status='pending'"), open_reports: n("SELECT COUNT(*) n FROM abuse_reports WHERE status='open'"), pending_memberships: n("SELECT COUNT(*) n FROM membership_requests WHERE status='pending'") },
+      signups_7d: n("SELECT COUNT(*) n FROM users WHERE created>=datetime('now','-7 days')"), signups_30d: n("SELECT COUNT(*) n FROM users WHERE created>=datetime('now','-30 days')")
+    });
+  }));
+
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://x');
       if (!url.pathname.startsWith('/api') && url.pathname !== '/health' && req.method === 'GET') {
-        const f = path.join(pub, url.pathname === '/' ? 'index.html' : path.normalize(url.pathname));
+        const f = path.join(pub, (url.pathname === '/' || url.pathname === '/admin' || url.pathname === '/control-center') ? 'index.html' : path.normalize(url.pathname));
         if (!f.startsWith(pub) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end('Not found'); }
         res.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' }[path.extname(f)] || 'text/plain', 'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'" });
         return fs.createReadStream(f).pipe(res);

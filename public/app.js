@@ -39,7 +39,7 @@ function setView(html){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function header(){
-  $('#nav').innerHTML = `<button class="nav-btn" id="nav-careers">Careers</button><button class="nav-btn" id="nav-marketplace">Freelance</button><button class="nav-btn" id="nav-membership">Plans</button>` + (me ? `${me.role==='admin'?'<button class="nav-btn" id="nav-admin">Admin dashboard</button>':''}<button class="nav-btn" id="nav-dashboard">My learning</button><button class="nav-btn primary" id="nav-out">Sign out</button>` : `<button class="nav-btn" id="nav-in">Sign in</button><button class="nav-btn primary" id="nav-join">Get started</button>`);
+  $('#nav').innerHTML = `<button class="nav-btn" id="nav-careers">Careers</button><button class="nav-btn" id="nav-marketplace">Freelance</button><button class="nav-btn" id="nav-membership">Plans</button>` + (me ? `${me.role==='admin'?'<button class="nav-btn nav-owner" id="nav-admin">Control Center</button>':''}<button class="nav-btn" id="nav-dashboard">My learning</button><button class="nav-btn primary" id="nav-out">Sign out</button>` : `<button class="nav-btn" id="nav-in">Sign in</button><button class="nav-btn primary" id="nav-join">Get started</button>`);
   if($('#nav-careers'))$('#nav-careers').onclick=careerMarketplace;if($('#nav-marketplace'))$('#nav-marketplace').onclick=freelanceMarketplace;if($('#nav-membership'))$('#nav-membership').onclick=membershipPage;
   if(me){if($('#nav-admin'))if($('#nav-admin'))$('#nav-admin').onclick=adminDash;if($('#nav-dashboard'))$('#nav-dashboard').onclick=dash;if($('#nav-out'))$('#nav-out').onclick=async()=>{try{await api('/logout','POST')}finally{me=null;header();homeScroll()}}}
   else {if($('#nav-in'))$('#nav-in').onclick=auth;if($('#nav-join'))$('#nav-join').onclick=auth}
@@ -47,6 +47,7 @@ function header(){
 async function init(){
   try{me=await api('/me')}catch{me=null}
   header(); $('#year').textContent=new Date().getFullYear();
+  if((location.pathname==='/admin'||location.pathname==='/control-center')&&typeof openControlCenter==='function'){await openControlCenter();}
   if($('#menu-toggle'))$('#menu-toggle').onclick=()=>{const open=$('#site-nav').classList.toggle('open');$('#menu-toggle').setAttribute('aria-expanded',String(open))};
   document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{const target=a.getAttribute('href');if(target&&target.length>1&&!document.querySelector(target)){e.preventDefault();window.location.href='/'+target}}));
   if($('#hero-account'))$('#hero-account').onclick=auth; if($('#footer-login'))$('#footer-login').onclick=auth;
@@ -89,7 +90,7 @@ function auth(){
   let registering=false;
   const update=()=>{$('#name-field').hidden=!registering;$('#auth-name').required=registering;$('#auth-title').textContent=registering?'Create your student account':'Welcome back';$('#auth-submit').textContent=registering?'Create account':'Sign in';$('#auth-switch').textContent=registering?'I already have an account':'Create account';$('#auth-password').autocomplete=registering?'new-password':'current-password';$('#auth-error').textContent=''};
   if($('#auth-switch'))$('#auth-switch').onclick=()=>{registering=!registering;update()};
-  if($('#auth-form'))$('#auth-form').onsubmit=async e=>{e.preventDefault();const err=$('#auth-error');err.textContent='';const b=$('#auth-submit');b.disabled=true;b.textContent='Please wait…';try{await api(registering?'/register':'/login','POST',{name:$('#auth-name').value,email:$('#auth-email').value.trim(),password:$('#auth-password').value,referral_code:new URLSearchParams(location.search).get('ref')||''});me=await api('/me');header();if(me)await dash();else homeScroll();}catch(ex){err.textContent=ex.message;}finally{b.disabled=false;b.textContent=registering?'Create account':'Sign in'}};
+  if($('#auth-form'))$('#auth-form').onsubmit=async e=>{e.preventDefault();const err=$('#auth-error');err.textContent='';const b=$('#auth-submit');b.disabled=true;b.textContent='Please wait…';try{await api(registering?'/register':'/login','POST',{name:$('#auth-name').value,email:$('#auth-email').value.trim(),password:$('#auth-password').value,referral_code:new URLSearchParams(location.search).get('ref')||''});me=await api('/me');header();if(me&&me.role==='admin'&&(location.pathname==='/admin'||location.pathname==='/control-center'))await adminDash();else if(me)await dash();else homeScroll();}catch(ex){err.textContent=ex.message;}finally{b.disabled=false;b.textContent=registering?'Create account':'Sign in'}};
 }
 function homeScroll(){
   // The SPA replaces #main, including #programs. Changing only the URL hash does not restore it.

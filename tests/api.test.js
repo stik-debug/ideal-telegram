@@ -162,3 +162,37 @@ test('excellence modules: career plan, practice labs, skill passport privacy and
   const report=quality.j.reports.find(r=>r.category==='broken_exercise');
   assert.equal((await call('/api/admin/course-quality/'+report.id,'PUT',{status:'resolved',admin_note:'Reproduced and fixed the exercise link.'},admin)).s,200);
 });
+
+test('control center: owner bootstrap, admin-only tools, role safeguards, CSV export, announcement', async () => {
+  const owner = createApp({ DB_FILE: ':memory:', OWNER_EMAIL: 'Owner@Example.com', OWNER_PASSWORD: 'owner-password-1' });
+  await new Promise(r => owner.server.listen(0, r)); const ob = 'http://127.0.0.1:' + owner.server.address().port;
+  const oc = async (path, method = 'GET', body, cookie) => { const r = await fetch(ob + path, { method, headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined }); const text = await r.text(); let j; try { j = JSON.parse(text); } catch { j = text; } return { s: r.status, j, c: (r.headers.get('set-cookie') || '').split(';')[0], h: r.headers }; };
+  try {
+    const login = await oc('/api/login', 'POST', { email: 'owner@example.com', password: 'owner-password-1' }); assert.equal(login.s, 200);
+    const a = login.c; assert.equal((await oc('/api/me', 'GET', null, a)).j.role, 'admin');
+    // /admin serves the app shell
+    assert.equal((await fetch(ob + '/admin')).status, 200);
+    // health + users
+    const h = await oc('/api/admin/health', 'GET', null, a); assert.equal(h.s, 200); assert.ok(Array.isArray(h.j.checks));
+    // students cannot reach new admin routes
+    await oc('/api/register', 'POST', { email: 'stu@x.com', name: 'Stu', password: 'longpassword1' });
+    const sc = (await oc('/api/login', 'POST', { email: 'stu@x.com', password: 'longpassword1' })).c;
+    for (const p of ['/api/admin/health', '/api/admin/users', '/api/admin/export/students', '/api/admin/announcement']) assert.equal((await oc(p, 'GET', null, sc)).s, 403, p);
+    assert.equal((await oc('/api/admin/export/students')).s, 401);
+    // role safeguards
+    const users = (await oc('/api/admin/users', 'GET', null, a)).j; const me = users.find(u => u.email === 'owner@example.com'), stu = users.find(u => u.email === 'stu@x.com');
+    assert.equal((await oc(`/api/admin/users/${me.id}/role`, 'PUT', { role: 'student' }, a)).s, 400);
+    assert.equal((await oc(`/api/admin/users/${stu.id}/role`, 'PUT', { role: 'superuser' }, a)).s, 400);
+    assert.equal((await oc(`/api/admin/users/${stu.id}/role`, 'PUT', { role: 'admin' }, a)).s, 200);
+    assert.equal((await oc(`/api/admin/users/${stu.id}/role`, 'PUT', { role: 'student' }, a)).s, 200);
+    // CSV export (and formula-injection guard)
+    owner.db.prepare("UPDATE users SET name='=HYPERLINK(\"x\")' WHERE email='stu@x.com'").run();
+    const csv = await oc('/api/admin/export/students', 'GET', null, a); assert.equal(csv.s, 200); assert.match(csv.h.get('content-type'), /text\/csv/); assert.ok(csv.j.includes("\"'=HYPERLINK"));
+    // announcement is public once published
+    assert.equal((await oc('/api/announcement')).j, null);
+    assert.equal((await oc('/api/admin/announcement', 'PUT', { message: 'New cohort starts Monday', level: 'success', active: true }, a)).s, 200);
+    assert.equal((await oc('/api/announcement')).j.message, 'New cohort starts Monday');
+    assert.equal((await oc('/api/admin/announcement', 'PUT', { message: '', active: false }, a)).s, 200);
+    assert.equal((await oc('/api/announcement')).j, null);
+  } finally { owner.server.close(); }
+});

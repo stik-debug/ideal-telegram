@@ -34,5 +34,5 @@ test('auth back-to-courses restores the original catalogue after SPA view replac
   const fs = await import('node:fs/promises');
   const source = await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(source, /function homeScroll\(\)[\s\S]*location\.reload\(\)/);
-  assert.match(source, /header\(\);if\(me\)await dash\(\);else homeScroll\(\)/);
+  assert.match(source, /header\(\);if\(me&&me\.role==='admin'&&\(location\.pathname==='\/admin'[^)]*\)\)await adminDash\(\);else if\(me\)await dash\(\);else homeScroll\(\)/);
 });
