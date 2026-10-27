@@ -1,5 +1,6 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { open } = require('./db'); const { hash, verify } = require('./auth');
+const qr = require('./qr'), mpesaLib = require('./mpesa'), registerFeatures = require('./features');
 
 function createApp(env = process.env) {
   const dbFile = env.DB_FILE || './data/skillforge.db';
@@ -22,7 +23,7 @@ function createApp(env = process.env) {
   const secHeaders = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()', 'Cross-Origin-Opener-Policy': 'same-origin', ...(env.COOKIE_SECURE === 'true' ? { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' } : {}) };
   const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...secHeaders, ...headers }); res.end(JSON.stringify(obj)); };
   const err = (res, code, msg) => send(res, code, { error: msg });
-  const certificatePdf = (student, course, code, issued) => {
+  const certificatePdf = (student, course, code, issued, verifyUrl) => {
     // A dependency-free, one-page PDF certificate with a verifiable unique code.
     const safe = (v) => String(v || '').normalize('NFKD').replace(/[^\x20-\x7E]/g, '').replace(/([\\()])/g, '\\$1').slice(0, 110);
     const lines = [
@@ -43,6 +44,7 @@ function createApp(env = process.env) {
       `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 135 130 Tm (Issued: ${safe(issued).slice(0,10)}) Tj ET`,
       `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 495 130 Tm (Certificate ID: ${safe(code)}) Tj ET`,
       'BT /F1 9 Tf 0.30 0.37 0.33 rg 1 0 0 1 190 83 Tm (Independent course completion record; not an accredited qualification.) Tj ET',
+      ...(verifyUrl ? [...qr.pdfOps(verifyUrl, 712, 58, 78), 'BT /F1 7 Tf 0.30 0.37 0.33 rg 1 0 0 1 727 49 Tm (Scan to verify) Tj ET'] : []),
       'BT /F1 8 Tf 0.30 0.37 0.33 rg 1 0 0 1 230 65 Tm (Verify this code using the official Skillora Academy verification page.) Tj ET'
     ].join('\n');
     const stream = Buffer.from(lines, 'latin1');
@@ -153,20 +155,69 @@ function createApp(env = process.env) {
     const r = db.prepare('SELECT ce.code,ce.issued,ce.user_id,u.name,co.title FROM certificates ce JOIN users u ON u.id=ce.user_id JOIN courses co ON co.id=ce.course_id WHERE ce.code=?').get(code);
     if (!r) return err(c.res, 404, 'Certificate not found');
     if (c.user.role !== 'admin' && r.user_id !== c.user.id) return err(c.res, 403, 'You cannot download another learner’s certificate');
-    const pdf = certificatePdf(r.name, r.title, r.code, r.issued);
+    const pdf = certificatePdf(r.name, r.title, r.code, r.issued, /^https:\/\//.test(env.PUBLIC_URL || '') ? env.PUBLIC_URL.replace(/\/$/, '') + '/verify/' + r.code : '');
     c.res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="SkillForge-Certificate-${r.code}.pdf"`, 'Content-Length': pdf.length, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
     c.res.end(pdf);
   });
+  // Shared by the signed webhook, the M-Pesa callback and status reconciliation. Idempotent.
+  const settlePayment = (p, ref, status) => {
+    db.prepare('UPDATE payments SET status=? WHERE ref=?').run(status, ref);
+    if (status === 'successful') { db.prepare('INSERT OR IGNORE INTO enrollments(user_id,course_id) VALUES(?,?)').run(p.user_id, p.course_id); const attr=db.prepare("SELECT * FROM referral_attributions WHERE referred_user_id=? AND status='registered'").get(p.user_id); const reward=Number(env.REFERRAL_REWARD_KES||0); if(attr && attr.referrer_id!==p.user_id && reward>0){ db.prepare("UPDATE referral_attributions SET status='qualified',qualifying_payment_ref=? WHERE id=?").run(ref,attr.id); db.prepare("INSERT OR IGNORE INTO reward_ledger(referral_id,referrer_id,amount_kes,payment_ref,reason) VALUES(?,?,?,?,?)").run(attr.id,attr.referrer_id,reward,ref,'Pending admin review after verified payment'); } }
+    if (status === 'refunded') { db.prepare('DELETE FROM enrollments WHERE user_id=? AND course_id=?').run(p.user_id, p.course_id); db.prepare("UPDATE reward_ledger SET status='reversed',reason='Qualifying payment refunded',updated=CURRENT_TIMESTAMP WHERE payment_ref=? AND status IN ('pending','approved')").run(ref); db.prepare("UPDATE referral_attributions SET status='rejected',reviewed=CURRENT_TIMESTAMP WHERE qualifying_payment_ref=?").run(ref); }
+  };
   // Payments: pending record is created server-side; access is granted ONLY by a signed webhook.
-  R('POST', '/api/checkout', (c) => {
+  const mpesa = mpesaLib.create(env);
+  R('POST', '/api/checkout', async (c) => {
     if (!c.user) return err(c.res, 401, 'Sign in required');
     const co = db.prepare('SELECT * FROM courses WHERE id=? AND published=1').get(Number(c.body.courseId)); if (!co) return err(c.res, 404, 'Course not found');
     const provider = c.body.provider === 'card' ? 'card' : 'mpesa';
     const ref = 'SF' + crypto.randomBytes(8).toString('hex').toUpperCase();
+    if (provider === 'mpesa' && mpesa.configured) {
+      try {
+        if (limited('co' + c.user.id, 5)) return err(c.res, 429, 'Too many payment attempts. Please wait a minute.');
+        if (db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id)) return err(c.res, 409, 'You are already enrolled in this course.');
+        const phone = mpesa.normalizePhone(c.body.phone); if (!phone) return err(c.res, 400, 'Enter a valid Safaricom number such as 0712345678.');
+        if (co.price_kes < 1) return err(c.res, 400, 'This course has no price set.');
+        db.prepare("UPDATE payments SET status='cancelled' WHERE user_id=? AND course_id=? AND provider='mpesa' AND status='pending' AND created<datetime('now','-10 minutes')").run(c.user.id, co.id);
+        if (db.prepare("SELECT 1 x FROM payments WHERE user_id=? AND course_id=? AND provider='mpesa' AND status='pending'").get(c.user.id, co.id)) return err(c.res, 409, 'A payment request is already waiting on your phone. Complete it or wait a few minutes.');
+        db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, 'mpesa');
+        try {
+          const r = await mpesa.stkPush({ phone, amount: co.price_kes, ref, desc: 'Skillora' });
+          db.prepare('INSERT INTO payment_mpesa(ref,checkout_request_id,merchant_request_id,phone_last4) VALUES(?,?,?,?)').run(ref, r.checkoutRequestId, r.merchantRequestId || '', phone.slice(-4));
+          return send(c.res, 202, { ref, status: 'pending', live_payments_enabled: true, message: r.customerMessage });
+        } catch (e) { db.prepare("UPDATE payments SET status='failed' WHERE ref=?").run(ref); console.error('M-Pesa STK error:', e.message); return err(c.res, 502, 'We could not send the M-Pesa request. Check the number and try again.'); }
+      } catch (e) { console.error('checkout error:', e.message); return err(c.res, 500, 'Could not start checkout. Please try again.'); }
+    }
     db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, provider);
     const live = !!(env.PAYMENT_PROVIDER && env.PAYMENT_API_KEY);
     // TODO(provider): when live, call the gateway here (server-side) with `ref` and amount, return its checkout/STK info.
     send(c.res, live ? 202 : 503, { ref, status: 'pending', live_payments_enabled: live, message: live ? 'Awaiting provider confirmation' : 'Live payments are not enabled yet. No access has been granted.' });
+  });
+  R('POST', '/api/webhooks/mpesa/:secret', (c, secret) => {
+    if (!env.MPESA_CALLBACK_SECRET || secret.length !== String(env.MPESA_CALLBACK_SECRET).length || !crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(String(env.MPESA_CALLBACK_SECRET)))) return err(c.res, 401, 'Unauthorized');
+    const cb = c.body && c.body.Body && c.body.Body.stkCallback; if (!cb || !cb.CheckoutRequestID) return err(c.res, 400, 'Bad callback');
+    const ack = (d) => send(c.res, 200, { ResultCode: 0, ResultDesc: d });
+    const map = db.prepare('SELECT ref FROM payment_mpesa WHERE checkout_request_id=?').get(String(cb.CheckoutRequestID)); if (!map) return ack('Ignored');
+    const p = db.prepare('SELECT * FROM payments WHERE ref=?').get(map.ref); if (!p || p.status !== 'pending') return ack('Already processed');
+    if (Number(cb.ResultCode) === 0) {
+      const items = (cb.CallbackMetadata && cb.CallbackMetadata.Item) || [], val = (n) => (items.find(i => i.Name === n) || {}).Value;
+      if (Number(val('Amount')) !== p.amount_kes) { db.prepare("INSERT INTO audit_log(actor_id,action,target,detail) VALUES(NULL,'payment.amount_mismatch',?,?)").run(p.ref, `Paid ${val('Amount')} expected ${p.amount_kes}; receipt ${val('MpesaReceiptNumber')}. Review manually.`); return ack('Amount mismatch recorded'); }
+      const receipt = 'mpesa:' + String(val('MpesaReceiptNumber') || cb.CheckoutRequestID);
+      if (db.prepare('SELECT 1 x FROM webhook_events WHERE event_id=?').get(receipt)) return ack('Duplicate');
+      db.prepare('INSERT INTO webhook_events(event_id) VALUES(?)').run(receipt); settlePayment(p, p.ref, 'successful');
+    } else settlePayment(p, p.ref, Number(cb.ResultCode) === 1032 ? 'cancelled' : 'failed');
+    ack('Accepted');
+  });
+  R('GET', '/api/payments/:ref/status', async (c, ref) => {
+    try {
+      if (!mustUser(c)) return; if (limited('ps' + c.user.id, 30)) return err(c.res, 429, 'Too many requests');
+      let p = db.prepare('SELECT * FROM payments WHERE ref=?').get(ref); if (!p || (p.user_id !== c.user.id && c.user.role !== 'admin')) return err(c.res, 404, 'Payment not found');
+      const m = db.prepare('SELECT checkout_request_id FROM payment_mpesa WHERE ref=?').get(ref);
+      if (p.status === 'pending' && m && mpesa.configured && Date.now() - Date.parse(p.created.replace(' ', 'T') + 'Z') > 20000) {
+        try { const q = await mpesa.stkQuery(m.checkout_request_id); if (!q.pending) { settlePayment(p, ref, q.success ? 'successful' : (q.code === 1032 ? 'cancelled' : 'failed')); p = db.prepare('SELECT * FROM payments WHERE ref=?').get(ref); } } catch (e) { console.error('STK query error:', e.message); }
+      }
+      send(c.res, 200, { ref, status: p.status, course_id: p.course_id });
+    } catch (e) { err(c.res, 500, 'Could not check the payment'); }
   });
   R('POST', '/api/webhooks/payment', (c) => {
     const sig = String(c.req.headers['x-signature'] || '');
@@ -178,9 +229,7 @@ function createApp(env = process.env) {
     db.prepare('INSERT INTO webhook_events(event_id) VALUES(?)').run(event_id);
     if (!['successful', 'failed', 'cancelled', 'refunded'].includes(status)) return err(c.res, 400, 'Bad status');
     if (status === 'successful' && Number(amount_kes) !== p.amount_kes) return err(c.res, 409, 'Amount mismatch');
-    db.prepare('UPDATE payments SET status=? WHERE ref=?').run(status, ref);
-    if (status === 'successful') { db.prepare('INSERT OR IGNORE INTO enrollments(user_id,course_id) VALUES(?,?)').run(p.user_id, p.course_id); const attr=db.prepare("SELECT * FROM referral_attributions WHERE referred_user_id=? AND status='registered'").get(p.user_id); const reward=Number(env.REFERRAL_REWARD_KES||0); if(attr && attr.referrer_id!==p.user_id && reward>0){ db.prepare("UPDATE referral_attributions SET status='qualified',qualifying_payment_ref=? WHERE id=?").run(ref,attr.id); db.prepare("INSERT OR IGNORE INTO reward_ledger(referral_id,referrer_id,amount_kes,payment_ref,reason) VALUES(?,?,?,?,?)").run(attr.id,attr.referrer_id,reward,ref,'Pending admin review after verified payment'); } }
-    if (status === 'refunded') { db.prepare('DELETE FROM enrollments WHERE user_id=? AND course_id=?').run(p.user_id, p.course_id); db.prepare("UPDATE reward_ledger SET status='reversed',reason='Qualifying payment refunded',updated=CURRENT_TIMESTAMP WHERE payment_ref=? AND status IN ('pending','approved')").run(ref); db.prepare("UPDATE referral_attributions SET status='rejected',reviewed=CURRENT_TIMESTAMP WHERE qualifying_payment_ref=?").run(ref); }
+    settlePayment(p, ref, status);
     send(c.res, 200, { ok: true });
   });
   const admin = (fn) => (c, ...a) => { if (!c.user) return err(c.res, 401, 'Sign in required'); if (c.user.role !== 'admin') return err(c.res, 403, 'Admins only'); return fn(c, ...a); };
@@ -266,10 +315,14 @@ function createApp(env = process.env) {
     const course = c.body.course_id ? db.prepare('SELECT title,summary FROM courses WHERE id=?').get(Number(c.body.course_id)) : null;
     const guided = () => ({ mode: 'guided', message: `AI tutor is not connected yet, so this is a study guide rather than a generated AI answer.\n\nYour question: ${q}\n\nTry this learning sequence:\n1. Identify the key concept in ${course ? course.title : 'your current lesson'}.\n2. Write what you already understand and where you are stuck.\n3. Build a tiny example and test one change at a time.\n4. Explain the result in your own words.\n\n${course ? `Course context: ${course.summary || course.title}` : 'Tip: include the lesson title and a short example for more focused help.'}\n\nNever paste passwords, payment details or private student information here.` });
     if (!env.OPENAI_API_KEY) return send(c.res, 200, guided());
+    { const day = new Date().toISOString().slice(0, 10), u = db.prepare('SELECT COALESCE(SUM(n),0) t, COALESCE(SUM(CASE WHEN user_id=? THEN n END),0) mine FROM ai_usage WHERE day=?').get(c.user.id, day);
+      if (u.mine >= Number(env.AI_DAILY_PER_USER || 20)) return err(c.res, 429, 'You have used today\u2019s AI tutor questions. Your limit resets tomorrow; the study-guide steps still work.');
+      if (u.t >= Number(env.AI_DAILY_TOTAL || 500)) return err(c.res, 503, 'The AI tutor has reached its daily capacity. Please try again tomorrow.');
+      db.prepare('INSERT INTO ai_usage(day,user_id,n) VALUES(?,?,1) ON CONFLICT(day,user_id) DO UPDATE SET n=n+1').run(day, c.user.id); }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20000);
     try {
-      const upstream = await fetch('https://api.openai.com/v1/responses', {
+      const upstream = await (env.fetch || fetch)('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -468,6 +521,8 @@ function createApp(env = process.env) {
       checks: [
         { label: 'Payment webhook secret configured', ok: !!env.PAYMENT_WEBHOOK_SECRET, fix: 'Set PAYMENT_WEBHOOK_SECRET before accepting real payments.' },
         { label: 'Secure cookies (HTTPS)', ok: env.COOKIE_SECURE === 'true', fix: 'Set COOKIE_SECURE=true when the site is served over HTTPS.' },
+        { label: 'M-Pesa STK Push configured', ok: mpesa.configured, fix: 'Set MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, MPESA_CALLBACK_SECRET and an https PUBLIC_URL.' },
+        { label: 'SMS reminders configured', ok: features.smsConfigured(), fix: 'Optional: set AT_USERNAME and AT_API_KEY (Africa\u2019s Talking).' },
         { label: 'Public URL set (referral links)', ok: !!env.PUBLIC_URL, fix: 'Set PUBLIC_URL to your site address.' },
         { label: 'AI tutor key configured', ok: !!env.OPENAI_API_KEY, fix: 'Optional: set OPENAI_API_KEY to enable AI answers; otherwise guided steps are used.' },
         { label: 'Default demo owner account removed', ok: !db.prepare("SELECT 1 x FROM users WHERE email='owner@skillora.local'").get(), fix: 'Sign in as your real owner, then change role/password of owner@skillora.local (or set OWNER_EMAIL).' },
@@ -478,24 +533,26 @@ function createApp(env = process.env) {
     });
   }));
 
+  const features = registerFeatures({ R, db, send, err, mustUser, admin, audit, env, limited, dbFile });
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://x');
+      if (req.method === 'GET' && url.pathname.startsWith('/verify/')) { const v = features.verifyPage(decodeURIComponent(url.pathname.slice(8))); res.writeHead(v.status, { 'Content-Type': 'text/html; charset=utf-8', ...secHeaders, 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" }); return res.end(v.html); }
       if (!url.pathname.startsWith('/api') && url.pathname !== '/health' && req.method === 'GET') {
         const f = path.join(pub, (url.pathname === '/' || url.pathname === '/admin' || url.pathname === '/control-center') ? 'index.html' : path.normalize(url.pathname));
         if (!f.startsWith(pub + path.sep) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end('Not found'); }
-        res.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' }[path.extname(f)] || 'text/plain', ...secHeaders, 'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" });
+        res.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' }[path.extname(f)] || 'text/plain', ...secHeaders, ...(url.pathname === '/sandbox.html' ? { 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; frame-ancestors 'self'" } : { 'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'self'" }) });
         return fs.createReadStream(f).pipe(res);
       }
       const raw = req.method === 'GET' ? '' : await readBody(req);
-      const isHook = url.pathname === '/api/webhooks/payment';
+      const isHook = url.pathname === '/api/webhooks/payment' || url.pathname.startsWith('/api/webhooks/mpesa/');
       if (req.method !== 'GET' && !isHook && !(req.headers['content-type'] || '').includes('application/json')) return err(res, 415, 'JSON required');
       let body = {}; try { body = raw ? JSON.parse(raw) : {}; } catch { return err(res, 400, 'Invalid JSON'); }
       for (const [m, re, fn] of routes) { const mt = re.exec(url.pathname); if (m === req.method && mt) return fn({ req, res, body, raw, user: userOf(req), ip: req.socket.remoteAddress }, ...mt.slice(1)); }
       err(res, 404, 'Not found');
     } catch (e) { console.error('error:', e.message); err(res, 500, 'Internal error'); }
   });
-  return { server, db };
+  return { server, db, runReminders: features.runReminders };
 }
 module.exports = { createApp };
 if (require.main === module) createApp().server.listen(process.env.PORT || 3000, () => console.log('Skillora Academy on port ' + (process.env.PORT || 3000)));

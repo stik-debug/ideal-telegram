@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Skillora code runner</title></head>
+<body>
+<!-- Isolated runner: loaded in <iframe sandbox="allow-scripts"> (opaque origin, no cookies, no network, no top navigation).
+     Learner code runs in a throwaway Worker that is killed after 2.5 seconds, so infinite loops cannot freeze the site. -->
+<script>
+(function () {
+  'use strict';
+  function workerMain() {
+    self.onmessage = function (e) {
+      var d = e.data, f;
+      try { f = new Function(d.code + '\nreturn typeof ' + d.fn + '==="function"?' + d.fn + ':undefined;')(); }
+      catch (err) { self.postMessage({ error: String(err && err.message || err) }); return; }
+      if (typeof f !== 'function') { self.postMessage({ error: 'Define a function named ' + d.fn + '.' }); return; }
+      var results = d.tests.map(function (t) {
+        try {
+          var out = f.apply(null, JSON.parse(JSON.stringify(t.args)));
+          var got = out === undefined ? 'undefined' : JSON.stringify(out);
+          return { ok: JSON.stringify(out) === JSON.stringify(t.expect), got: got };
+        } catch (err) { return { ok: false, got: 'Error: ' + (err && err.message || err) }; }
+      });
+      self.postMessage({ results: results });
+    };
+  }
+  var blobUrl = URL.createObjectURL(new Blob(['(' + workerMain.toString() + ')()'], { type: 'text/javascript' }));
+  function reply(m) { parent.postMessage(m, '*'); }
+  function runJs(d) {
+    if (!/^[A-Za-z_$][\w$]*$/.test(String(d.fn)) || String(d.code).length > 20000) return reply({ id: d.id, error: 'Invalid exercise' });
+    var w, done = false;
+    try { w = new Worker(blobUrl); } catch (e) { return reply({ id: d.id, error: 'Your browser blocked the code runner.' }); }
+    var timer = setTimeout(function () { if (done) return; done = true; w.terminate(); reply({ id: d.id, error: 'Timed out after 2.5 seconds. Check for an infinite loop.' }); }, 2500);
+    w.onmessage = function (e) { if (done) return; done = true; clearTimeout(timer); w.terminate(); var m = e.data || {}; m.id = d.id; reply(m); };
+    w.onerror = function (e) { if (done) return; done = true; clearTimeout(timer); w.terminate(); reply({ id: d.id, error: String(e.message || 'Your code has an error.') }); };
+    w.postMessage({ code: String(d.code), fn: d.fn, tests: d.tests });
+  }
+  function runHtml(d) {
+    var doc = new DOMParser().parseFromString(String(d.code).slice(0, 50000), 'text/html'); // parsing never runs scripts
+    var results = d.tests.map(function (t) {
+      var els = Array.prototype.slice.call(doc.querySelectorAll(t.sel)), ok = els.length >= (t.min || 1);
+      if (ok && t.text) ok = els.some(function (el) { return el.textContent.trim().toLowerCase() === String(t.text).toLowerCase(); });
+      return { ok: ok, got: els.length + ' matching element(s)' };
+    });
+    reply({ id: d.id, results: results });
+  }
+  window.addEventListener('message', function (e) {
+    var d = e.data; if (!d || typeof d !== 'object') return;
+    if (d.type === 'js') runJs(d); else if (d.type === 'html') runHtml(d);
+  });
+  reply({ ready: true });
+})();
+</script>
+</body></html>

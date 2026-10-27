@@ -27,3 +27,13 @@ All new endpoints are admin-only (`/api/admin/health|users|users/:id/role|export
 
 ## Still required before real launch (not done by code alone)
 Real payment provider + webhook testing, HTTPS with `COOKIE_SECURE=true`, a persistent `DB_FILE` with tested backups, email verification/password recovery, and a browser/mobile test pass.
+
+## Learner-success features (this release)
+- **M-Pesa STK Push** (`backend/mpesa.js`): learner enters a Safaricom number, gets a PIN prompt. Access is granted only by Safaricom's callback (`/api/webhooks/mpesa/<MPESA_CALLBACK_SECRET>`) after the amount is checked, or by a status check against Safaricom if the callback is lost. Test in the Daraja sandbox before going live.
+- **Learning Hub** (signed-in nav button): server-side streaks and daily check-in; spaced-repetition reviews built from quiz questions in lessons the learner finished; Practice Lab with 12 in-browser exercises (JavaScript + HTML) in an isolated sandbox; cohorts; outcome reports; settings.
+- **Certificates** now carry a scannable QR code (when `PUBLIC_URL` is https) linking to a public page at `/verify/<code>` showing valid/revoked.
+- **Public results** on the home page come from live records. Learner outcomes are counted only after an admin verifies them in Control Center > Community & outcomes. The completion rate stays hidden until 30 learners are enrolled.
+- **Cohorts and mentor clinics** can be created in Control Center > Community & outcomes.
+- **SMS reminders** (Africa's Talking): opt-in, number verified by a one-time code, one text per day at 6 pm Kenya time only if the learner has not studied. Off until `AT_USERNAME`/`AT_API_KEY` are set.
+- **Offline library** (save an enrolled course to the device, cleared on sign-out), **data saver** mode, and a **Kiswahili interface** (menus and home page; course lessons remain English - have a native speaker review the wording).
+- **AI tutor caps**: `AI_DAILY_PER_USER` and `AI_DAILY_TOTAL` stop runaway spending.
