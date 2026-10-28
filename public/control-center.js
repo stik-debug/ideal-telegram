@@ -1,211 +1,466 @@
-/* Skillora Owner Control Center enhancements + site announcement banner.
-   Loaded after app.js (shares its globals: me, api, esc, setView, auth, header). Server enforces admin-only access. */
+/* Skillora Owner Control Center — organized layout + announcement banner.
+   Loaded after app.js (globals: me, api, esc, setView, auth, header). Server enforces admin-only access. */
 (function () {
   'use strict';
   const q = (s, r = document) => r.querySelector(s);
+  const qa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
   const isAdminPath = () => location.pathname === '/admin' || location.pathname === '/control-center';
-  const toast = (msg, bad) => { const el = q('#cc-toast'); if (!el) return; el.textContent = msg; el.className = 'cc-toast' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(() => { el.textContent = ''; el.className = 'cc-toast'; }, 5000); };
+  const toast = (msg, bad) => {
+    let el = q('#cc-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'cc-toast';
+      el.className = 'cc-toast';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.className = 'cc-toast' + (bad ? ' bad' : '') + ' show';
+    clearTimeout(toast.t);
+    toast.t = setTimeout(() => { el.className = 'cc-toast'; el.textContent = ''; }, 4500);
+  };
   const fmt = (n) => Number(n || 0).toLocaleString();
 
-  // ---------- Public announcement banner ----------
   async function showAnnouncement() {
     try {
-      const a = await fetch('/api/announcement', { credentials: 'same-origin' }).then(r => r.json());
+      const a = await fetch('/api/announcement', { credentials: 'same-origin' }).then((r) => r.json());
       if (!a || !a.message) return;
-      let dismissed = ''; try { dismissed = sessionStorage.getItem('skillora.announcement') || ''; } catch { }
+      let dismissed = '';
+      try { dismissed = sessionStorage.getItem('skillora.announcement') || ''; } catch { }
       if (dismissed === String(a.id)) return;
       const bar = document.createElement('div');
-      bar.className = 'announce announce-' + esc(a.level); bar.setAttribute('role', 'status');
+      bar.className = 'announce announce-' + esc(a.level);
+      bar.setAttribute('role', 'status');
       bar.innerHTML = `<span>${esc(a.message)}</span><button type="button" aria-label="Dismiss announcement">×</button>`;
-      bar.querySelector('button').onclick = () => { bar.remove(); try { sessionStorage.setItem('skillora.announcement', String(a.id)); } catch { } };
+      bar.querySelector('button').onclick = () => {
+        bar.remove();
+        try { sessionStorage.setItem('skillora.announcement', String(a.id)); } catch { }
+      };
       document.body.insertBefore(bar, document.body.firstChild.nextSibling || document.body.firstChild);
-      const skip = q('.skip-link'); if (skip) document.body.insertBefore(skip, document.body.firstChild);
-    } catch { /* banner is optional */ }
+    } catch { }
   }
 
-  // ---------- Entry points ----------
   window.openControlCenter = async function () {
     if (!me) {
       auth();
       const card = q('.auth-card');
-      if (card) card.insertAdjacentHTML('afterbegin', '<p class="cc-signin-note" role="status"><b>Owner sign-in.</b> Sign in with your owner/admin account to open the Control Center.</p>');
+      if (card) {
+        card.insertAdjacentHTML('afterbegin', '<p class="cc-signin-note" role="status"><b>Owner sign-in.</b> Use your owner/admin account to open the Control Center.</p>');
+      }
       return;
     }
     if (me.role !== 'admin') {
-      setView('<section class="view-shell"><div class="view-head"><h1>Control Center</h1><p>This account (' + esc(me.email) + ') does not have owner/admin access. Sign out and sign in with the owner account, or ask an existing admin to grant access.</p></div></section>');
+      setView(`<section class="view-shell"><div class="view-head"><h1>Control Center</h1>
+        <p>This account (${esc(me.email)}) is not an admin. Sign out and sign in with the owner account.</p>
+        <button class="btn-solid" id="cc-denied-out">Sign out</button></div></section>`);
+      q('#cc-denied-out').onclick = () => api('/logout', 'POST').then(() => location.reload());
       return;
     }
-    return window.adminDash();
+    await window.adminDash();
   };
 
-  // ---------- Control Center enhancement ----------
-  const baseAdminDash = window.adminDash;
-  window.adminDash = async function () {
-    await baseAdminDash.apply(this, arguments);
-    try { await enhance(); } catch (e) { console.error('Control Center enhancement failed:', e); }
-  };
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+      e.preventDefault();
+      window.openControlCenter();
+    }
+  });
 
-  const SECTIONS = [
-    ['Payment oversight', 'cc-payments', 'Payments'], ['Course completion health', 'cc-health', 'Completion'], ['Recent audit activity', 'cc-audit', 'Audit log'],
-    ['Course management', 'cc-courses', 'Courses'], ['Students & enrolments', 'cc-students', 'Students'], ['Assignment reviews', 'cc-assignments', 'Assignments'],
-    ['Support tickets', 'cc-support', 'Support'], ['Certificates issued', 'cc-certs', 'Certificates'],
-    ['Closed accounts', 'cc-deleted', 'Closed accounts'], ['Database & payments', 'cc-dbpay', 'Database']
+  if (isAdminPath()) {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(() => window.openControlCenter(), 50));
+  }
+
+  const NAV = [
+    { id: 'cc-overview', label: 'Overview', group: 'Home' },
+    { id: 'cc-attention', label: 'Needs attention', group: 'Home' },
+    { id: 'cc-students', label: 'Students', group: 'Learners' },
+    { id: 'cc-enrolments', label: 'Enrolments', group: 'Learners' },
+    { id: 'cc-assignments', label: 'Assignments', group: 'Learners' },
+    { id: 'cc-support', label: 'Support tickets', group: 'Learners' },
+    { id: 'cc-courses', label: 'Courses', group: 'Content' },
+    { id: 'cc-certs', label: 'Certificates', group: 'Content' },
+    { id: 'cc-payments', label: 'Payments', group: 'Money' },
+    { id: 'cc-completion', label: 'Completion health', group: 'Money' },
+    { id: 'cc-moderation', label: 'Moderation', group: 'Community' },
+    { id: 'cc-community', label: 'Community tools', group: 'Community' },
+    { id: 'cc-tools', label: 'Owner tools', group: 'System' },
+    { id: 'cc-audit', label: 'Audit log', group: 'System' },
+    { id: 'cc-deleted', label: 'Closed accounts', group: 'System' },
+    { id: 'cc-dbpay', label: 'Database & payments', group: 'System' },
   ];
 
-  async function enhance() {
-    const shell = q('#main .view-shell'); if (!shell || shell.dataset.ccReady) return; shell.dataset.ccReady = '1';
-    // Give existing panels stable ids so the jump bar and attention tiles can link to them.
-    shell.querySelectorAll('.panel > h2').forEach(h => { const s = SECTIONS.find(x => h.textContent.trim().startsWith(x[0])); if (s) h.parentElement.id = s[1]; });
-    const head = q('.view-head', shell);
-    const [health, ann, users, cohorts, outcomes, courseList] = await Promise.all([api('/admin/health'), api('/admin/announcement'), api('/admin/users'), api('/admin/cohorts').catch(() => []), api('/admin/outcomes').catch(() => []), api('/courses').catch(() => [])]);
-
-    const att = health.attention, tiles = [
-      ['Assignments to review', att.pending_assignments, 'cc-assignments'], ['Open support tickets', att.open_tickets, 'cc-support'],
-      ['Gigs awaiting approval', att.pending_gigs, 'cc-moderation'], ['Employers to verify', att.pending_employers, 'cc-moderation'],
-      ['Instructor applications', att.pending_instructors, 'cc-moderation'], ['Scholarship requests', att.pending_scholarships, 'cc-tools'],
-      ['Open safety reports', att.open_reports, 'cc-tools'], ['Membership requests', att.pending_memberships, 'cc-moderation']
-    ];
-    const total = tiles.reduce((a, t) => a + t[1], 0);
-    const jump = `<nav class="cc-jump" aria-label="Control Center sections"><a href="#cc-top">Overview</a><a href="#cc-tools">Owner tools</a><a href="#cc-community">Community</a>${SECTIONS.map(s => `<a href="#${s[1]}">${s[2]}</a>`).join('')}</nav>`;
-    const attention = `<section class="panel cc-attention" id="cc-top" aria-labelledby="cc-att-h"><div class="cc-row"><h2 id="cc-att-h">Needs your attention <span class="cc-pill ${total ? 'warn' : 'ok'}">${total ? total + ' item' + (total === 1 ? '' : 's') : 'All clear'}</span></h2><button type="button" class="course-open" id="cc-refresh">↻ Refresh</button></div><div class="cc-tiles">${tiles.map(t => `<a class="cc-tile ${t[1] ? 'has' : ''}" href="#${t[2]}"><b>${fmt(t[1])}</b><span>${esc(t[0])}</span></a>`).join('')}</div><p class="muted">New learners: ${fmt(health.signups_7d)} in the last 7 days · ${fmt(health.signups_30d)} in the last 30 days.</p><div id="cc-toast" class="cc-toast" role="status" aria-live="polite"></div></section>`;
-
-    const exportsHtml = ['students', 'payments', 'enrolments', 'certificates', 'audit'].map(k => `<a class="course-open cc-btn" href="/api/admin/export/${k}" download>⇩ ${k[0].toUpperCase() + k.slice(1)} CSV</a>`).join('');
-    const checks = health.checks.map(c => `<li class="${c.ok ? 'ok' : 'warn'}"><span aria-hidden="true">${c.ok ? '✓' : '!'}</span><div><b>${esc(c.label)}</b> — ${c.ok ? 'OK' : 'Needs attention'}${c.ok ? '' : `<small>${esc(c.fix)}</small>`}</div></li>`).join('');
-    const a = ann || { message: '', level: 'info', active: 0 };
-    const tools = `<section class="panel cc-tools" id="cc-tools" aria-labelledby="cc-tools-h"><h2 id="cc-tools-h">Owner tools</h2>
-      <div class="cc-grid">
-        <article class="cc-card"><h3>Site announcement</h3><p class="muted">Shows a dismissible banner at the top of every page. Keep it short.</p>
-          <form id="cc-ann-form"><label>Message<textarea name="message" maxlength="300" rows="2">${esc(a.message)}</textarea></label>
-          <label>Style<select name="level"><option value="info" ${a.level === 'info' ? 'selected' : ''}>Information</option><option value="success" ${a.level === 'success' ? 'selected' : ''}>Good news</option><option value="warning" ${a.level === 'warning' ? 'selected' : ''}>Important notice</option></select></label>
-          <label class="cc-check"><input type="checkbox" name="active" ${a.active ? 'checked' : ''}> Show banner to visitors</label>
-          <button class="btn-solid" type="submit">Save announcement</button></form></article>
-        <article class="cc-card"><h3>Export data (CSV)</h3><p class="muted">Download records for bookkeeping or backup. Exports are logged in the audit trail.</p><div class="cc-btns">${exportsHtml}</div></article>
-        <article class="cc-card"><h3>System health</h3><ul class="cc-checks">${checks}</ul><p class="muted">Server uptime ${fmt(health.uptime_minutes)} min · Node ${esc(health.node)} · Database ${health.database_ok ? 'responding' : 'NOT responding'} (${health.database_mb} MB${health.in_memory ? ', in-memory' : ''}).</p></article>
-      </div>
-<article class="cc-card" style="margin-top:16px;max-width:420px"><h3>Change my password</h3><p class="muted">Signs you out on every other device.</p><form id="cc-pw-form"><label>Current password<input type="password" name="current_password" autocomplete="current-password" required></label><label>New password (10+ characters)<input type="password" name="new_password" autocomplete="new-password" minlength="10" required></label><button class="btn-solid" type="submit">Update password</button></form></article>
-            <h3 style="margin-top:22px">Users & admin access</h3><p class="muted">Grant or remove owner/admin access. You cannot remove your own access, and one admin must always remain.</p>
-      <label class="cc-search">Search users<input id="cc-user-search" type="search" placeholder="Name or email…" autocomplete="off"></label>
-      <div class="cc-table-wrap"><table class="cc-table"><caption class="sr-only">All user accounts</caption><thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Courses</th><th scope="col">Lessons</th><th scope="col">Role</th></tr></thead><tbody id="cc-users"></tbody></table></div><p id="cc-user-count" class="muted" role="status"></p></section>`;
-
-    const pendingOutcomes = outcomes.filter(o => o.status === 'pending').length;
-    const community = `<section class="panel" id="cc-community" aria-labelledby="cc-comm-h"><h2 id="cc-comm-h">Community & outcomes${pendingOutcomes ? ` <span class="cc-pill warn">${pendingOutcomes} to verify</span>` : ''}</h2>
-      <div class="cc-grid">
-        <article class="cc-card"><h3>New cohort</h3><form id="cc-cohort-form"><label>Title<input name="title" required minlength="3" maxlength="120"></label><label>Course (optional)<select name="course_id"><option value="">Any topic</option>${(Array.isArray(courseList) ? courseList : []).map(c => `<option value="${Number(c.id)}">${esc(c.title)}</option>`).join('')}</select></label><label>Starts<input type="date" name="starts_on" required></label><label>Ends<input type="date" name="ends_on" required></label><label>Capacity<input type="number" name="capacity" min="2" max="500" value="30" required></label><label>Description<textarea name="description" maxlength="1000" rows="2"></textarea></label><button class="btn-solid" type="submit">Create cohort</button><p id="cc-cohort-msg" class="cc-toast" role="status"></p></form></article>
-        <article class="cc-card"><h3>New mentor clinic</h3><form id="cc-clinic-form"><label>Title<input name="title" required maxlength="160"></label><label>Mentor name<input name="mentor_name" required maxlength="120"></label><label>Date and time<input type="datetime-local" name="starts_at" required></label><label>Seats<input type="number" name="capacity" min="1" max="500" value="20" required></label><label>What will be covered<textarea name="description" required maxlength="2000" rows="2"></textarea></label><button class="btn-solid" type="submit">Publish clinic</button><p id="cc-clinic-msg" class="cc-toast" role="status"></p></form></article>
-      </div>
-      <h3 style="margin-top:22px">Cohorts</h3>${cohorts.length ? `<div class="cc-table-wrap"><table class="cc-table"><caption class="sr-only">Cohorts</caption><thead><tr><th scope="col">Title</th><th scope="col">Dates</th><th scope="col">Joined</th><th scope="col">Status</th></tr></thead><tbody>${cohorts.map(h => `<tr><td>${esc(h.title)}</td><td>${esc(h.starts_on)} → ${esc(h.ends_on)}</td><td>${h.members}/${h.capacity}</td><td><label class="sr-only" for="co-${h.id}">Status of ${esc(h.title)}</label><select id="co-${h.id}" data-cohort="${h.id}"><option ${h.status === 'open' ? 'selected' : ''} value="open">Open</option><option ${h.status === 'closed' ? 'selected' : ''} value="closed">Closed</option><option ${h.status === 'cancelled' ? 'selected' : ''} value="cancelled">Cancelled</option></select></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No cohorts yet.</p>'}
-      <h3 style="margin-top:22px">Learner outcome reports</h3><p class="muted">Only reports you verify are counted in the public results on the home page. Check the evidence link where one is given.</p>${outcomes.length ? `<div class="cc-table-wrap"><table class="cc-table"><caption class="sr-only">Outcome reports</caption><thead><tr><th scope="col">Learner</th><th scope="col">Outcome</th><th scope="col">Details</th><th scope="col">Status</th></tr></thead><tbody>${outcomes.map(o => `<tr><td>${esc(o.name)}<br><small>${esc(o.email)}</small></td><td>${esc(o.label)}</td><td>${esc(o.note)}${o.evidence_url ? `<br><a href="${esc(o.evidence_url)}" target="_blank" rel="noopener noreferrer">evidence</a>` : ''}</td><td>${o.status === 'pending' ? `<button class="course-open" data-oc="${o.id}" data-st="verified">Verify</button> <button class="course-open" data-oc="${o.id}" data-st="rejected">Reject</button>` : esc(o.status)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No reports yet.</p>'}</section>`;
-    head.insertAdjacentHTML('afterend', jump + attention + tools + community);
-    // Anchor for the moderation block the base view appends (marketplace moderation / membership requests).
-    const mod = [...shell.querySelectorAll('.panel')].find(p => /moderation|membership/i.test((p.querySelector('h2,h3') || {}).textContent || '')); if (mod) mod.id = 'cc-moderation';
-
-    // Users table with search + role changes
-    const render = () => {
-      const term = (q('#cc-user-search').value || '').trim().toLowerCase();
-      const list = users.filter(u => !term || u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term));
-      q('#cc-users').innerHTML = list.map(u => `<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.courses}</td><td>${u.lessons_done}</td><td><label class="sr-only" for="role-${u.id}">Role for ${esc(u.email)}</label><select id="role-${u.id}" data-role-user="${u.id}" ${u.id === me.id ? 'disabled title="You cannot change your own role"' : ''}><option value="student" ${u.role === 'student' ? 'selected' : ''}>Student</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin / owner</option></select></td></tr>`).join('') || '<tr><td colspan="5">No matching users.</td></tr>';
-      q('#cc-user-count').textContent = `Showing ${list.length} of ${users.length} account${users.length === 1 ? '' : 's'}.`;
-    };
-    render(); q('#cc-user-search').addEventListener('input', render);
-    q('#cc-users').addEventListener('change', async e => {
-      const sel = e.target.closest('[data-role-user]'); if (!sel) return; const u = users.find(x => x.id === Number(sel.dataset.roleUser));
-      if (sel.value === 'admin' && !confirm(`Give ${u.email} full owner/admin access to learner data and payments?`)) { sel.value = u.role; return; }
-      try { await api(`/admin/users/${u.id}/role`, 'PUT', { role: sel.value }); u.role = sel.value; toast(`${u.email} is now ${sel.value === 'admin' ? 'an admin' : 'a student'}.`); }
-      catch (ex) { sel.value = u.role; toast(ex.message, true); }
-    });
-    q('#cc-ann-form').onsubmit = async e => {
-      e.preventDefault(); const f = new FormData(e.target);
-      try { await api('/admin/announcement', 'PUT', { message: f.get('message'), level: f.get('level'), active: f.get('active') === 'on' }); toast(f.get('active') === 'on' ? 'Announcement published.' : 'Announcement hidden.'); }
-      catch (ex) { toast(ex.message, true); }
-    };
-    q('#cc-pw-form').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); try { await api('/account/password', 'POST', { current_password: f.get('current_password'), new_password: f.get('new_password') }); e.target.reset(); toast('Password updated. Other devices were signed out.'); } catch (ex) { toast(ex.message, true); } };
-    q('#cc-cohort-form').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); f.capacity = Number(f.capacity); f.course_id = f.course_id ? Number(f.course_id) : null; try { await api('/admin/cohorts', 'POST', f); window.adminDash(); } catch (ex) { const m = q('#cc-cohort-msg'); m.textContent = ex.message; m.className = 'cc-toast bad'; } };
-    q('#cc-clinic-form').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); f.capacity = Number(f.capacity); f.starts_at = new Date(f.starts_at).toISOString(); const m = q('#cc-clinic-msg'); try { await api('/admin/mentor-clinics', 'POST', f); e.target.reset(); m.textContent = 'Clinic published. Learners can book it now.'; m.className = 'cc-toast'; } catch (ex) { m.textContent = ex.message; m.className = 'cc-toast bad'; } };
-    shell.querySelectorAll('[data-cohort]').forEach(sel => sel.addEventListener('change', async () => { try { await api('/admin/cohorts/' + sel.dataset.cohort, 'PUT', { status: sel.value }); toast('Cohort updated.'); } catch (ex) { toast(ex.message, true); } }));
-    shell.querySelectorAll('[data-oc]').forEach(b => b.addEventListener('click', async () => { try { await api('/admin/outcomes/' + b.dataset.oc, 'PUT', { status: b.dataset.st }); window.adminDash(); } catch (ex) { toast(ex.message, true); } }));
-    q('#cc-refresh').onclick = () => window.adminDash();
-
-    // Student/enrolment search on the existing panel
-    const sp = q('#cc-students');
-    if (sp) {
-      const rows = [...sp.querySelectorAll(':scope > p')];
-      sp.querySelector('h2').insertAdjacentHTML('afterend', '<label class="cc-search">Filter students and enrolments<input id="cc-stu-search" type="search" placeholder="Name, email or course…" autocomplete="off"></label>');
-      q('#cc-stu-search').addEventListener('input', e => { const t = e.target.value.trim().toLowerCase(); rows.forEach(r => { r.hidden = !!t && !r.textContent.toLowerCase().includes(t); }); });
-    }
-    // Back to top + keep jump links smooth without breaking hash routing
-    shell.querySelectorAll('a[href^="#cc-"]').forEach(l => l.addEventListener('click', e => { const t = q(l.getAttribute('href')); if (t) { e.preventDefault(); e.stopPropagation(); t.scrollIntoView({ behavior: 'smooth', block: 'start' }); t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); } }, true));
-    window.scrollTo({ top: 0 });
-    const h1 = q('h1', shell); if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: true }); }
+  function slugifyHeading(text) {
+    const t = String(text || '').toLowerCase();
+    if (t.includes('payment oversight')) return 'cc-payments';
+    if (t.includes('course completion')) return 'cc-completion';
+    if (t.includes('audit')) return 'cc-audit';
+    if (t.includes('course management')) return 'cc-courses';
+    if (t.includes('student')) return 'cc-students';
+    if (t.includes('enrol')) return 'cc-enrolments';
+    if (t.includes('assignment')) return 'cc-assignments';
+    if (t.includes('support')) return 'cc-support';
+    if (t.includes('certificate')) return 'cc-certs';
+    if (t.includes('moderation') || t.includes('freelance') || t.includes('career') || t.includes('employer') || t.includes('instructor')) return 'cc-moderation';
+    if (t.includes('owner tool') || t.includes('announcement') || t.includes('password') || t.includes('users & admin')) return 'cc-tools';
+    if (t.includes('community') || t.includes('cohort') || t.includes('outcome') || t.includes('mentor')) return 'cc-community';
+    return null;
   }
 
-  // Keyboard shortcut for the owner: Alt+Shift+A
-  document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.key.toLowerCase() === 'a' && typeof me !== 'undefined' && me && me.role === 'admin') { e.preventDefault(); window.adminDash(); } });
+  function buildSidebar(activeId) {
+    let html = '<aside class="cc-sidebar" aria-label="Control Center navigation"><div class="cc-sidebar-brand"><span class="cc-dot"></span><div><strong>Control Center</strong><small>Owner tools</small></div></div>';
+    let lastGroup = '';
+    for (const item of NAV) {
+      if (item.group !== lastGroup) {
+        if (lastGroup) html += '</div>';
+        html += `<div class="cc-nav-group"><p class="cc-nav-label">${item.group}</p>`;
+        lastGroup = item.group;
+      }
+      html += `<a class="cc-nav-link${item.id === activeId ? ' active' : ''}" href="#${item.id}" data-cc-nav="${item.id}">${item.label}</a>`;
+    }
+    html += '</div><div class="cc-sidebar-foot"><button type="button" class="cc-nav-link" id="cc-sidebar-refresh">↻ Refresh data</button><a class="cc-nav-link" href="/">← Back to site</a></div></aside>';
+    return html;
+  }
+
+  function panelToSection(panel, id) {
+    panel.classList.add('cc-section-card');
+    panel.id = id;
+    panel.hidden = true;
+    return panel;
+  }
+
+  async function reorganize() {
+    const shell = q('#main .view-shell') || q('.view-shell');
+    if (!shell || shell.dataset.ccLayout === '1') return;
+    shell.dataset.ccLayout = '1';
+    shell.classList.add('cc-shell');
+
+    const metricGrids = qa(':scope > .dashboard-grid', shell);
+    const metrics = [];
+    metricGrids.forEach((grid) => {
+      qa('article.panel, .panel', grid).forEach((card) => {
+        const label = (q('p', card) || {}).textContent || '';
+        const value = (q('h2', card) || {}).textContent || '';
+        if (label || value) metrics.push({ label, value });
+      });
+    });
+
+    const sections = {};
+    qa(':scope > .panel', shell).forEach((panel) => {
+      const h = q('h2, h3', panel);
+      const id = slugifyHeading(h && h.textContent);
+      if (id) sections[id] = panelToSection(panel, id);
+    });
+
+    const layout = document.createElement('div');
+    layout.className = 'cc-layout';
+    layout.innerHTML = buildSidebar('cc-overview');
+
+    const main = document.createElement('div');
+    main.className = 'cc-main';
+
+    const top = document.createElement('header');
+    top.className = 'cc-topbar';
+    top.innerHTML = `<div><p class="eyebrow dark">SKILLORA OWNER</p><h1>Control Center</h1>
+      <p class="cc-top-sub">Manage learners, courses, payments and site settings.</p></div>
+      <div class="cc-top-actions"><span class="cc-who">${esc(me?.email || 'Admin')}</span>
+      <button type="button" class="course-open" id="cc-refresh">Refresh</button></div>`;
+    main.appendChild(top);
+
+    const overview = document.createElement('section');
+    overview.id = 'cc-overview';
+    overview.className = 'cc-section-card cc-overview';
+    overview.innerHTML = `<div class="cc-section-head"><h2>Overview</h2><p>Snapshot of your academy right now.</p></div>
+      <div class="cc-metric-grid">${metrics.map((m) => `<article class="cc-metric"><span>${esc(m.label)}</span><strong>${esc(m.value)}</strong></article>`).join('') || '<p class="muted">No metrics yet.</p>'}</div>`;
+    main.appendChild(overview);
+
+    const attention = document.createElement('section');
+    attention.id = 'cc-attention';
+    attention.className = 'cc-section-card';
+    attention.hidden = true;
+    attention.innerHTML = `<div class="cc-section-head"><h2>Needs your attention</h2><p>Items waiting for an owner decision.</p></div><div class="cc-tiles" id="cc-attention-tiles"></div>`;
+    main.appendChild(attention);
+
+    const order = NAV.map((n) => n.id).filter((id) => id !== 'cc-overview' && id !== 'cc-attention');
+    for (const id of order) {
+      if (sections[id]) main.appendChild(sections[id]);
+    }
+    qa(':scope > .panel', shell).forEach((panel) => {
+      if (!panel.id) {
+        panel.classList.add('cc-section-card');
+        panel.hidden = true;
+        main.appendChild(panel);
+      }
+    });
+
+    shell.innerHTML = '';
+    layout.appendChild(main);
+    shell.appendChild(layout);
+
+    if (!q('#cc-toast')) {
+      const t = document.createElement('div');
+      t.id = 'cc-toast';
+      t.className = 'cc-toast';
+      shell.appendChild(t);
+    }
+
+    function showSection(id) {
+      qa('.cc-section-card', main).forEach((el) => { el.hidden = el.id !== id; });
+      qa('[data-cc-nav]', layout).forEach((a) => { a.classList.toggle('active', a.getAttribute('data-cc-nav') === id); });
+      try { history.replaceState(null, '', '#' + id); } catch { }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    layout.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-cc-nav]');
+      if (!a) return;
+      e.preventDefault();
+      showSection(a.getAttribute('data-cc-nav'));
+    });
+
+    q('#cc-refresh', main).onclick = () => window.adminDash();
+    q('#cc-sidebar-refresh', layout).onclick = () => window.adminDash();
+
+    const hash = (location.hash || '').replace(/^#/, '');
+    showSection(hash && q('#' + hash, main) ? hash : 'cc-overview');
+
+    await loadAttention(attention);
+    await loadSystemPanels(main);
+    rebindMovedForms(main);
+  }
+
+  async function loadAttention(attentionEl) {
+    try {
+      const health = await api('/admin/health');
+      const att = health.attention || {};
+      const tiles = [
+        ['Assignments', att.pending_assignments, 'cc-assignments'],
+        ['Support tickets', att.open_tickets, 'cc-support'],
+        ['Gigs', att.pending_gigs, 'cc-moderation'],
+        ['Employers', att.pending_employers, 'cc-moderation'],
+        ['Instructors', att.pending_instructors, 'cc-moderation'],
+        ['Scholarships', att.pending_scholarships, 'cc-tools'],
+        ['Safety reports', att.open_reports, 'cc-tools'],
+        ['Memberships', att.pending_memberships, 'cc-moderation'],
+      ];
+      const total = tiles.reduce((a, t) => a + (Number(t[1]) || 0), 0);
+      const host = q('#cc-attention-tiles', attentionEl);
+      host.innerHTML = tiles.map((t) =>
+        `<button type="button" class="cc-tile ${t[1] ? 'warn' : ''}" data-jump="${t[2]}"><b>${fmt(t[1])}</b><span>${esc(t[0])}</span></button>`
+      ).join('');
+      host.querySelectorAll('[data-jump]').forEach((btn) => {
+        btn.onclick = () => {
+          const link = q(`[data-cc-nav="${btn.getAttribute('data-jump')}"]`);
+          if (link) link.click();
+        };
+      });
+      attentionEl.hidden = false;
+      const head = q('.cc-section-head h2', attentionEl);
+      if (head && !q('.cc-pill', head)) {
+        const pill = document.createElement('span');
+        pill.className = 'cc-pill ' + (total ? 'warn' : 'ok');
+        pill.textContent = total ? total + ' open' : 'All clear';
+        head.appendChild(pill);
+      }
+      if (health.checks) {
+        const ov = q('#cc-overview');
+        if (ov && !q('#cc-health-checks', ov)) {
+          const box = document.createElement('div');
+          box.id = 'cc-health-checks';
+          box.className = 'cc-health-list';
+          box.innerHTML = '<h3>System health</h3><ul>' + health.checks.map((c) =>
+            `<li class="${c.ok ? 'ok' : 'bad'}"><span>${c.ok ? '✓' : '!'}</span> ${esc(c.label)}${c.ok ? '' : c.fix ? ` <small>${esc(c.fix)}</small>` : ''}</li>`
+          ).join('') + '</ul>';
+          ov.appendChild(box);
+        }
+      }
+    } catch (e) {
+      console.warn('attention load failed', e);
+    }
+  }
+
+  async function loadSystemPanels(main) {
+    if (!q('#cc-tools', main)) {
+      const tools = document.createElement('section');
+      tools.id = 'cc-tools';
+      tools.className = 'cc-section-card';
+      tools.hidden = true;
+      let ann = { message: '', level: 'info', active: false };
+      try { ann = await api('/admin/announcement'); } catch { }
+      tools.innerHTML = `
+        <div class="cc-section-head"><h2>Owner tools</h2><p>Site-wide announcement and your admin password.</p></div>
+        <div class="cc-split">
+          <form id="cc-ann-form" class="cc-form-card">
+            <h3>Site announcement</h3>
+            <label>Message<textarea name="message" rows="3" maxlength="280">${esc(ann.message || '')}</textarea></label>
+            <label>Level<select name="level">
+              <option value="info"${ann.level === 'info' ? ' selected' : ''}>Info</option>
+              <option value="warn"${ann.level === 'warn' ? ' selected' : ''}>Warning</option>
+              <option value="urgent"${ann.level === 'urgent' ? ' selected' : ''}>Urgent</option>
+            </select></label>
+            <label class="cc-check"><input type="checkbox" name="active"${ann.active ? ' checked' : ''}> Show banner on site</label>
+            <button class="course-open" type="submit">Save announcement</button>
+          </form>
+          <form id="cc-pw-form" class="cc-form-card">
+            <h3>Change my password</h3>
+            <label>Current password<input type="password" name="current_password" required autocomplete="current-password"></label>
+            <label>New password (10+ chars)<input type="password" name="new_password" required minlength="10" autocomplete="new-password"></label>
+            <button class="course-open" type="submit">Update password</button>
+            <p class="muted">Other devices will be signed out.</p>
+          </form>
+        </div>`;
+      main.appendChild(tools);
+      q('#cc-ann-form', tools).onsubmit = async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        try {
+          await api('/admin/announcement', 'PUT', { message: f.get('message'), level: f.get('level'), active: f.get('active') === 'on' });
+          toast(f.get('active') === 'on' ? 'Announcement published.' : 'Announcement hidden.');
+        } catch (ex) { toast(ex.message, true); }
+      };
+      q('#cc-pw-form', tools).onsubmit = async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        try {
+          await api('/account/password', 'POST', { current_password: f.get('current_password'), new_password: f.get('new_password') });
+          e.target.reset();
+          toast('Password updated. Other devices were signed out.');
+        } catch (ex) { toast(ex.message, true); }
+      };
+    }
+
+    if (!q('#cc-deleted', main)) {
+      const sec = document.createElement('section');
+      sec.id = 'cc-deleted';
+      sec.className = 'cc-section-card';
+      sec.hidden = true;
+      let deleted = [];
+      try { deleted = await api('/admin/deleted-users'); } catch { deleted = []; }
+      sec.innerHTML = `<div class="cc-section-head"><h2>Closed accounts</h2>
+        <p>Learners can close their account. Records stay until you permanently purge them.</p></div>
+        ${deleted.length ? `<div class="cc-table-wrap"><table class="cc-table">
+          <thead><tr><th>ID</th><th>Closed</th><th>Reason</th><th></th></tr></thead>
+          <tbody>${deleted.map((u) => `<tr>
+            <td>${u.id}</td><td>${esc(u.deleted_at || '')}</td><td>${esc(u.deletion_reason || '—')}</td>
+            <td class="cc-row-actions">
+              <button type="button" class="nav-btn" data-restore="${u.id}">Restore</button>
+              <button type="button" class="nav-btn danger" data-purge="${u.id}">Purge</button>
+            </td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No closed accounts.</p>'}`;
+      main.appendChild(sec);
+      sec.querySelectorAll('[data-restore]').forEach((btn) => {
+        btn.onclick = async () => {
+          const email = prompt('Email to restore this account to:');
+          if (!email) return;
+          try {
+            await api('/admin/users/' + btn.dataset.restore + '/restore', 'POST', { email });
+            toast('Account restored.');
+            window.adminDash();
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+      sec.querySelectorAll('[data-purge]').forEach((btn) => {
+        btn.onclick = async () => {
+          if (!confirm('Permanently delete this user and their learning records?')) return;
+          try {
+            await api('/admin/users/' + btn.dataset.purge + '/purge', 'DELETE', {});
+            toast('User purged.');
+            window.adminDash();
+          } catch (e) { toast(e.message, true); }
+        };
+      });
+    }
+
+    if (!q('#cc-dbpay', main)) {
+      const sec = document.createElement('section');
+      sec.id = 'cc-dbpay';
+      sec.className = 'cc-section-card';
+      sec.hidden = true;
+      let providers = null;
+      try { providers = await api('/admin/payment-providers'); } catch { providers = null; }
+      const mpesaOk = !!(providers && providers.mpesa && providers.mpesa.configured);
+      const paystackOk = !!(providers && providers.paystack && providers.paystack.configured);
+      sec.innerHTML = `<div class="cc-section-head"><h2>Database & payments</h2>
+        <p>Provider status and database backup. Use a persistent disk on Render so data survives redeploys.</p></div>
+        <div class="cc-metric-grid">
+          <article class="cc-metric"><span>M-Pesa STK</span><strong class="${mpesaOk ? 'ok' : 'bad'}">${mpesaOk ? 'Ready' : 'Off'}</strong></article>
+          <article class="cc-metric"><span>Paystack</span><strong class="${paystackOk ? 'ok' : 'bad'}">${paystackOk ? 'Ready' : 'Off'}</strong></article>
+        </div>
+        <div class="cc-form-card" style="margin-top:16px">
+          <h3>Database backup</h3>
+          <p class="muted">Writes a snapshot on the server. Copy it off-site regularly.</p>
+          <button type="button" class="course-open" id="cc-backup-btn">Run backup now</button>
+          <p id="cc-backup-msg" class="muted" role="status"></p>
+        </div>
+        <div class="cc-form-card" style="margin-top:16px">
+          <h3>Persistent disk (Render)</h3>
+          <ol class="cc-steps">
+            <li>Render dashboard → your Web Service → <b>Disks</b></li>
+            <li>Add disk, mount path <code>/var/data</code>, size 1 GB+</li>
+            <li>Set env <code>DB_FILE=/var/data/skillora.db</code></li>
+            <li>Redeploy</li>
+          </ol>
+          <p class="muted">Disks require a paid Render plan. On free tier, data may reset when the service redeploys.</p>
+        </div>`;
+      main.appendChild(sec);
+      q('#cc-backup-btn', sec).onclick = async () => {
+        const msg = q('#cc-backup-msg', sec);
+        try {
+          const r = await api('/admin/backup', 'POST', {});
+          msg.textContent = r.message + (r.path ? ' Path: ' + r.path : '');
+          toast('Backup completed.');
+        } catch (e) {
+          msg.textContent = e.message;
+          toast(e.message, true);
+        }
+      };
+    }
+  }
+
+  function rebindMovedForms(root) {
+    qa('form[data-course-edit]', root).forEach((form) => {
+      if (form.dataset.ccBound) return;
+      form.dataset.ccBound = '1';
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const id = form.getAttribute('data-course-edit');
+        const f = new FormData(form);
+        try {
+          await api('/admin/courses/' + id, 'PUT', {
+            title: f.get('title'),
+            slug: f.get('slug'),
+            summary: f.get('summary'),
+            price_kes: Number(f.get('price_kes')),
+            published: f.get('published') === 'on' ? 1 : 0,
+          });
+          toast('Course saved.');
+        } catch (ex) { toast(ex.message, true); }
+      };
+    });
+  }
+
+  const baseAdminDash = window.adminDash;
+  window.adminDash = async function () {
+    if (typeof baseAdminDash === 'function') await baseAdminDash.apply(this, arguments);
+    try { await reorganize(); } catch (e) { console.error('Control Center layout failed:', e); }
+  };
+
+  const prevHeader = window.header;
+  if (typeof prevHeader === 'function') {
+    window.header = function () {
+      prevHeader.apply(this, arguments);
+      if (me && me.role === 'admin') {
+        const nav = q('#nav');
+        if (nav && !q('#nav-admin')) {
+          const b = document.createElement('button');
+          b.className = 'nav-btn nav-owner';
+          b.id = 'nav-admin';
+          b.textContent = 'Control Center';
+          b.onclick = () => window.openControlCenter();
+          nav.insertBefore(b, nav.firstChild);
+        } else if (q('#nav-admin')) {
+          q('#nav-admin').onclick = () => window.openControlCenter();
+        }
+      }
+    };
+  }
+
   showAnnouncement();
 })();
-
-
-  // Extra Control Center panels: closed accounts + database backup + payment providers
-  const _enhance = typeof enhance === 'function' ? enhance : null;
-  async function enhanceDbAndAccounts() {
-    const shell = q('.view-shell') || q('main');
-    if (!shell || q('#cc-deleted')) return;
-    let deleted = [], providers = null;
-    try { deleted = await api('/admin/deleted-users'); } catch { deleted = []; }
-    try { providers = await api('/admin/payment-providers'); } catch { providers = null; }
-
-    const delHtml = `<section class="cc-section" id="cc-deleted"><h2>Closed accounts</h2>
-      <p class="muted">Learners can close their account from settings. Records stay until you permanently purge them. Restoring requires a new email.</p>
-      ${deleted.length ? `<div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>ID</th><th>Closed</th><th>Reason</th><th>Actions</th></tr></thead><tbody>
-      ${deleted.map(u => `<tr data-uid="${u.id}"><td>${u.id}</td><td>${esc(u.deleted_at || '')}</td><td>${esc(u.deletion_reason || '—')}</td>
-      <td><button type="button" class="nav-btn" data-restore="${u.id}">Restore</button>
-      <button type="button" class="nav-btn" data-purge="${u.id}">Purge</button></td></tr>`).join('')}
-      </tbody></table></div>` : '<p>No closed accounts.</p>'}
-    </section>`;
-
-    const payHtml = `<section class="cc-section" id="cc-dbpay"><h2>Database & payment providers</h2>
-      <div class="cc-tiles">
-        <div class="cc-tile"><b>${providers && providers.mpesa && providers.mpesa.configured ? 'Ready' : 'Off'}</b><span>M-Pesa STK</span></div>
-        <div class="cc-tile"><b>${providers && providers.paystack && providers.paystack.configured ? 'Ready' : 'Off'}</b><span>Paystack</span></div>
-      </div>
-      <p class="muted">Set <code>DB_FILE</code> on a persistent volume so learner data survives redeploys. Use backup before upgrades.</p>
-      <div class="cc-btns">
-        <button type="button" class="course-open" id="cc-backup-btn">Run database backup</button>
-      </div>
-      <p id="cc-backup-msg" class="muted" role="status"></p>
-    </section>`;
-
-    shell.insertAdjacentHTML('beforeend', delHtml + payHtml);
-
-    q('#cc-backup-btn') && (q('#cc-backup-btn').onclick = async () => {
-      const msg = q('#cc-backup-msg');
-      try {
-        const r = await api('/admin/backup', 'POST', {});
-        msg.textContent = r.message + (r.path ? ' Path: ' + r.path : '');
-        toast('Backup completed.');
-      } catch (e) { msg.textContent = e.message; toast(e.message, true); }
-    });
-
-    shell.querySelectorAll('[data-restore]').forEach(btn => btn.onclick = async () => {
-      const email = prompt('Email address to restore this account to:');
-      if (!email) return;
-      try {
-        await api('/admin/users/' + btn.dataset.restore + '/restore', 'POST', { email });
-        toast('Account restored.');
-        window.adminDash();
-      } catch (e) { toast(e.message, true); }
-    });
-    shell.querySelectorAll('[data-purge]').forEach(btn => btn.onclick = async () => {
-      if (!confirm('Permanently delete this user and their learning records? This cannot be undone.')) return;
-      try {
-        await api('/admin/users/' + btn.dataset.purge + '/purge', 'DELETE', {});
-        toast('User purged.');
-        window.adminDash();
-      } catch (e) { toast(e.message, true); }
-    });
-  }
-
-  const prevAdmin = window.adminDash;
-  window.adminDash = async function () {
-    await prevAdmin.apply(this, arguments);
-    try { await enhanceDbAndAccounts(); } catch (e) { console.error(e); }
-  };
