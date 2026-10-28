@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT N
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), exp INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS courses(id INTEGER PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, summary TEXT, price_kes INTEGER NOT NULL CHECK(price_kes>=0), published INTEGER NOT NULL DEFAULT 0, content_status TEXT NOT NULL DEFAULT 'not_written');
 CREATE TABLE IF NOT EXISTS lessons(id INTEGER PRIMARY KEY, course_id INTEGER NOT NULL REFERENCES courses(id), pos INTEGER NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, is_free INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS quizzes(id INTEGER PRIMARY KEY, lesson_id INTEGER NOT NULL REFERENCES lessons(id), question TEXT NOT NULL, options TEXT NOT NULL, answer INTEGER NOT NULL, explain TEXT);
+CREATE TABLE IF NOT EXISTS quizzes(id INTEGER PRIMARY KEY, lesson_id INTEGER NOT NULL REFERENCES lessons(id), question TEXT NOT NULL, options TEXT NOT NULL, answer INTEGER NOT NULL, explanation TEXT);
 CREATE TABLE IF NOT EXISTS enrollments(user_id INTEGER NOT NULL REFERENCES users(id), course_id INTEGER NOT NULL REFERENCES courses(id), created TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,course_id));
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY, ref TEXT UNIQUE NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id), course_id INTEGER NOT NULL REFERENCES courses(id), amount_kes INTEGER NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN('pending','successful','failed','cancelled','refunded')), created TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS webhook_events(event_id TEXT PRIMARY KEY, received TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -36,7 +36,6 @@ CREATE TABLE IF NOT EXISTS business_challenges(id INTEGER PRIMARY KEY, title TEX
 CREATE TABLE IF NOT EXISTS challenge_applications(id INTEGER PRIMARY KEY, challenge_id INTEGER NOT NULL REFERENCES business_challenges(id), user_id INTEGER NOT NULL REFERENCES users(id), message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN('submitted','shortlisted','declined')), created TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(challenge_id,user_id));
 CREATE TABLE IF NOT EXISTS abuse_reports(id INTEGER PRIMARY KEY, reporter_id INTEGER NOT NULL REFERENCES users(id), target_type TEXT NOT NULL, target_id INTEGER NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN('open','reviewing','resolved','dismissed')), admin_note TEXT DEFAULT '', created TEXT DEFAULT CURRENT_TIMESTAMP, reviewed TEXT);
 
--- Retention and learner outcomes: additive tables only; existing records remain untouched.
 CREATE TABLE IF NOT EXISTS daily_missions(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), mission_date TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, target_id INTEGER, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN('open','completed','dismissed')), created TEXT DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, UNIQUE(user_id,mission_date));
 CREATE TABLE IF NOT EXISTS learner_goals(user_id INTEGER PRIMARY KEY REFERENCES users(id), weekly_target INTEGER NOT NULL DEFAULT 3 CHECK(weekly_target BETWEEN 1 AND 14), career_goal TEXT DEFAULT '', updated TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS milestone_awards(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), milestone_key TEXT NOT NULL, title TEXT NOT NULL, awarded TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id,milestone_key));
@@ -86,6 +85,6 @@ CREATE TABLE IF NOT EXISTS user_contacts(user_id INTEGER PRIMARY KEY REFERENCES 
 CREATE TABLE IF NOT EXISTS reminder_log(user_id INTEGER NOT NULL REFERENCES users(id), day TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'sms', created TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,day,channel));
 CREATE TABLE IF NOT EXISTS ai_usage(day TEXT NOT NULL, user_id INTEGER NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day,user_id));
 
-CREATE TABLE IF NOT EXISTS payment_mpesa(ref TEXT PRIMARY KEY REFERENCES payments(ref), checkout_request_id TEXT, merchant_request_id TEXT, phone_last4 TEXT);
-CREATE TABLE IF NOT EXISTS payment_paystack(ref TEXT PRIMARY KEY REFERENCES payments(ref), access_code TEXT, authorization_url TEXT, paystack_ref TEXT);
+CREATE TABLE IF NOT EXISTS payment_mpesa(ref TEXT PRIMARY KEY, checkout_request_id TEXT, merchant_request_id TEXT, phone_last4 TEXT);
+CREATE TABLE IF NOT EXISTS payment_paystack(ref TEXT PRIMARY KEY, access_code TEXT, authorization_url TEXT, paystack_ref TEXT);
 CREATE TABLE IF NOT EXISTS db_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated TEXT DEFAULT CURRENT_TIMESTAMP);

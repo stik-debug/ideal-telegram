@@ -1,0 +1,714 @@
+const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
+const { open, backup } = require('./db'); const { hash, verify } = require('./auth');
+const qr = require('./qr'), mpesaLib = require('./mpesa'), paystackLib = require('./paystack'), registerFeatures = require('./features');
+
+function createApp(env = process.env) {
+  const dbFile = env.DB_FILE || './data/skillforge.db';
+  const db = open(dbFile);
+  // Owner bootstrap: set OWNER_EMAIL and OWNER_PASSWORD (10+ chars) to guarantee an admin account exists at startup.
+  // A new account is created with that password; an existing account is only promoted (its password is never overwritten).
+  if (env.OWNER_EMAIL && env.OWNER_PASSWORD && String(env.OWNER_PASSWORD).length >= 10) {
+    const oe = String(env.OWNER_EMAIL).trim().toLowerCase();
+    const ex = db.prepare('SELECT id,role FROM users WHERE email=?').get(oe);
+    if (!ex) { db.prepare("INSERT INTO users(email,name,pass_hash,role) VALUES(?,?,?,'admin')").run(oe, env.OWNER_NAME || 'Academy Owner', hash(String(env.OWNER_PASSWORD))); console.log('[Skillora] Owner account created for', oe); }
+    else if (ex.role !== 'admin') { db.prepare("UPDATE users SET role='admin' WHERE id=?").run(ex.id); console.log('[Skillora] Existing account promoted to owner/admin:', oe); }
+  }
+  console.log('[Skillora] SQLite database path:', require('path').resolve(dbFile));
+  const secret = env.PAYMENT_WEBHOOK_SECRET || '';
+  const hits = new Map(), failures = new Map();
+  // Housekeeping: purge expired sessions and stale rate-limit entries (timer does not keep the process alive).
+  const sweep = () => { try { db.prepare('DELETE FROM sessions WHERE exp<?').run(Date.now()); } catch {} const now = Date.now(); for (const [k, a] of hits) if (!a.some(t => now - t < 60000)) hits.delete(k); for (const [k, v] of failures) if (now - v.t > 15 * 60000) failures.delete(k); };
+  sweep(); setInterval(sweep, 600000).unref();
+  const limited = (key, max = 10) => { const now = Date.now(), a = (hits.get(key) || []).filter(t => now - t < 60000); a.push(now); hits.set(key, a); return a.length > max; };
+  const secHeaders = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()', 'Cross-Origin-Opener-Policy': 'same-origin', ...(env.COOKIE_SECURE === 'true' ? { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' } : {}) };
+  const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...secHeaders, ...headers }); res.end(JSON.stringify(obj)); };
+  const err = (res, code, msg) => send(res, code, { error: msg });
+  const certificatePdf = (student, course, code, issued, verifyUrl) => {
+    // A dependency-free, one-page PDF certificate with a verifiable unique code.
+    const safe = (v) => String(v || '').normalize('NFKD').replace(/[^\x20-\x7E]/g, '').replace(/([\\()])/g, '\\$1').slice(0, 110);
+    const lines = [
+      'q', '0.05 0.25 0.20 rg', '0 0 842 595 re f',
+      'Q', 'q', '0.98 0.98 0.95 rg', '18 18 806 559 re f', 'Q',
+      'q', '0.05 0.25 0.20 RG', '3 w', '32 32 778 531 re S', 'Q',
+      'q', '0.78 0.58 0.20 RG', '1.2 w', '43 43 756 509 re S', 'Q',
+      'BT /F1 15 Tf 0.05 0.25 0.20 rg 1 0 0 1 0 0 Tm 1 0 0 1 315 520 Tm (SKILLFORGE ACADEMY) Tj ET',
+      'BT /F1 11 Tf 0.35 0.43 0.38 rg 1 0 0 1 334 493 Tm (CERTIFICATE OF COMPLETION) Tj ET',
+      'BT /F2 34 Tf 0.05 0.25 0.20 rg 1 0 0 1 251 435 Tm (Certificate) Tj ET',
+      'BT /F2 30 Tf 0.05 0.25 0.20 rg 1 0 0 1 300 394 Tm (of Completion) Tj ET',
+      'BT /F1 13 Tf 0.30 0.37 0.33 rg 1 0 0 1 304 350 Tm (This is proudly presented to) Tj ET',
+      `BT /F2 26 Tf 0.05 0.25 0.20 rg 1 0 0 1 ${Math.max(90, 421-safe(student).length*7)} 309 Tm (${safe(student)}) Tj ET`,
+      'q 0.78 0.58 0.20 RG 1.5 w 130 294 m 712 294 l S Q',
+      'BT /F1 13 Tf 0.30 0.37 0.33 rg 1 0 0 1 300 260 Tm (for successfully completing the course) Tj ET',
+      `BT /F2 20 Tf 0.05 0.25 0.20 rg 1 0 0 1 ${Math.max(75, 421-safe(course).length*5.5)} 225 Tm (${safe(course)}) Tj ET`,
+      'BT /F1 11 Tf 0.30 0.37 0.33 rg 1 0 0 1 260 188 Tm (Awarded by Skillora Academy) Tj ET',
+      `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 135 130 Tm (Issued: ${safe(issued).slice(0,10)}) Tj ET`,
+      `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 495 130 Tm (Certificate ID: ${safe(code)}) Tj ET`,
+      'BT /F1 9 Tf 0.30 0.37 0.33 rg 1 0 0 1 190 83 Tm (Independent course completion record; not an accredited qualification.) Tj ET',
+      ...(verifyUrl ? [...qr.pdfOps(verifyUrl, 712, 58, 78), 'BT /F1 7 Tf 0.30 0.37 0.33 rg 1 0 0 1 727 49 Tm (Scan to verify) Tj ET'] : []),
+      'BT /F1 8 Tf 0.30 0.37 0.33 rg 1 0 0 1 230 65 Tm (Verify this code using the official Skillora Academy verification page.) Tj ET'
+    ].join('\n');
+    const stream = Buffer.from(lines, 'latin1');
+    const objs = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
+      `<< /Length ${stream.length} >>\nstream\n${stream.toString('latin1')}\nendstream`
+    ];
+    let pdf = '%PDF-1.4\n%SFCA\n', offsets = [0];
+    for (let i=0;i<objs.length;i++){offsets.push(Buffer.byteLength(pdf,'latin1'));pdf += `${i+1} 0 obj\n${objs[i]}\nendobj\n`;}
+    const xref = Buffer.byteLength(pdf,'latin1'); pdf += `xref\n0 ${objs.length+1}\n0000000000 65535 f \n`;
+    for(let i=1;i<offsets.length;i++) pdf += `${String(offsets[i]).padStart(10,'0')} 00000 n \n`;
+    pdf += `trailer\n<< /Size ${objs.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+    return Buffer.from(pdf,'latin1');
+  };
+  const readBody = (req) => new Promise((ok, no) => { let b = ''; req.on('data', d => { b += d; if (b.length > 1e6) { req.destroy(); no(new Error('too large')); } }); req.on('end', () => ok(b)); });
+  const cookie = (req, n) => ((req.headers.cookie || '').split(/;\s*/).find(c => c.startsWith(n + '=')) || '').slice(n.length + 1);
+  const userOf = (req) => { const t = cookie(req, 'sid'); if (!t) return null; return db.prepare('SELECT u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.exp>? AND u.deleted_at IS NULL').get(t, Date.now()) || null; };
+  const canRead = (u, courseId) => u && (u.role === 'admin' || db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(u.id, courseId));
+  const newSession = (res, uid, body) => { const t = crypto.randomBytes(32).toString('hex'); db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(t, uid, Date.now() + 7 * 864e5);
+    send(res, 200, body, { 'Set-Cookie': `sid=${t}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${env.COOKIE_SECURE === 'true' ? '; Secure' : ''}` }); };
+
+  const routes = [];
+  const R = (m, p, fn) => routes.push([m, new RegExp('^' + p.replace(/:\w+/g, '([^/]+)') + '$'), fn]);
+
+  R('GET', '/health', (c) => send(c.res, 200, { status: 'ok', db: db.prepare('SELECT 1 x').get().x === 1 }));
+  R('POST', '/api/register', (c) => {
+    const { email, name, password } = c.body;
+    if (limited('reg' + c.ip)) return err(c.res, 429, 'Too many attempts');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '') || !name || String(name).length > 80 || (password || '').length < 10) return err(c.res, 400, 'Valid email, name and a password of 10+ characters are required');
+    try {
+      const r = db.prepare("INSERT INTO users(email,name,pass_hash) VALUES(?,?,?)").run(email.toLowerCase(), name, hash(password));
+      const uid = Number(r.lastInsertRowid), code = String(c.body.referral_code || '').trim().toUpperCase();
+      if (code) { const ref = db.prepare('SELECT referrer_id,code FROM referrals WHERE code=?').get(code); if (ref && ref.referrer_id !== uid) db.prepare('INSERT OR IGNORE INTO referral_attributions(referrer_id,referred_user_id,referral_code) VALUES(?,?,?)').run(ref.referrer_id,uid,ref.code); }
+      db.prepare('INSERT OR IGNORE INTO learner_goals(user_id) VALUES(?)').run(uid);
+      db.prepare('INSERT OR IGNORE INTO notification_preferences(user_id) VALUES(?)').run(uid);
+      newSession(c.res, uid, { ok: true });
+    } catch { err(c.res, 409, 'Email already registered'); }
+  });
+  R('POST', '/api/login', (c) => {
+    if (limited('login' + c.ip)) return err(c.res, 429, 'Too many attempts');
+    const em = String(c.body.email || '').toLowerCase().slice(0, 200), f = failures.get(em);
+    if (f && f.n >= 5 && Date.now() - f.t < 15 * 60000) return err(c.res, 429, 'Too many failed attempts for this account. Try again in 15 minutes.');
+    const u = db.prepare('SELECT * FROM users WHERE email=?').get(em);
+    if (u && u.deleted_at) return err(c.res, 403, 'This account was closed. Contact support if you need help recovering learning records.');
+    if (!u || !verify(String(c.body.password || ''), u.pass_hash)) {
+      failures.set(em, { n: (f && Date.now() - f.t < 15 * 60000 ? f.n : 0) + 1, t: Date.now() });
+      if (u && u.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(u.id, 'login.failed', em, 'Wrong password for an admin account');
+      return err(c.res, 401, 'Invalid email or password');
+    }
+    failures.delete(em);
+    if (u.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(u.id, 'login.admin', em, '');
+    newSession(c.res, u.id, { ok: true });
+  });
+  R('POST', '/api/logout', (c) => { db.prepare('DELETE FROM sessions WHERE token=?').run(cookie(c.req, 'sid')); send(c.res, 200, { ok: true }, { 'Set-Cookie': 'sid=; Max-Age=0; Path=/' }); });
+  R('GET', '/api/me', (c) => c.user ? send(c.res, 200, c.user) : err(c.res, 401, 'Not signed in'));
+  R('GET', '/api/courses', (c) => send(c.res, 200, db.prepare('SELECT id,slug,title,summary,price_kes,content_status,(SELECT COUNT(*) FROM lessons WHERE course_id=courses.id) lessons FROM courses WHERE published=1').all()));
+  R('GET', '/api/courses/:slug', (c, slug) => {
+    const co = db.prepare('SELECT * FROM courses WHERE slug=? AND published=1').get(slug);
+    if (!co) return err(c.res, 404, 'Course not found');
+    const full = canRead(c.user, co.id);
+    const done = c.user ? new Set(db.prepare('SELECT lesson_id FROM progress WHERE user_id=?').all(c.user.id).map(r => r.lesson_id)) : new Set();
+    const lessons = db.prepare('SELECT id,pos,title,body,is_free FROM lessons WHERE course_id=? ORDER BY pos').all(co.id).map(l => {
+      const open = full || l.is_free; const qs = open ? db.prepare('SELECT id,question,options FROM quizzes WHERE lesson_id=?').all(l.id).map(q => ({ ...q, options: JSON.parse(q.options) })) : [];
+      return { id: l.id, pos: l.pos, title: l.title, is_free: !!l.is_free, locked: !open, done: done.has(l.id), body: open ? l.body : null, quiz: qs };
+    });
+    send(c.res, 200, { id: co.id, slug, title: co.title, summary: co.summary, price_kes: co.price_kes, enrolled: !!full, lessons });
+  });
+  const lessonAccess = (c, id) => {
+    const l = db.prepare('SELECT * FROM lessons WHERE id=?').get(id);
+    if (!l) { err(c.res, 404, 'Lesson not found'); return null; }
+    if (!c.user) { err(c.res, 401, 'Sign in required'); return null; }
+    if (!l.is_free && !canRead(c.user, l.course_id)) { err(c.res, 403, 'Enrol to access this lesson'); return null; }
+    return l;
+  };
+  R('POST', '/api/lessons/:id/complete', (c, id) => { const l = lessonAccess(c, id); if (!l) return; const wasDone=!!db.prepare('SELECT 1 FROM progress WHERE user_id=? AND lesson_id=?').get(c.user.id,l.id); db.prepare('INSERT OR IGNORE INTO progress(user_id,lesson_id) VALUES(?,?)').run(c.user.id, l.id); if(!wasDone)db.prepare("INSERT INTO learning_events(user_id,event_type,target_type,target_id) VALUES(?,'lesson_completed','lesson',?)").run(c.user.id,l.id); send(c.res, 200, { ok: true, already_completed:wasDone }); });
+  R('POST', '/api/lessons/:id/quiz', (c, id) => {
+    const l = lessonAccess(c, id); if (!l) return;
+    const qs = db.prepare('SELECT * FROM quizzes WHERE lesson_id=?').all(l.id); const ans = c.body.answers || {};
+    let score = 0; const results = qs.map(q => { const ok = Number(ans[q.id]) === q.answer; if (ok) score++; return { id: q.id, correct: ok, explanation: (q.explanation ?? q.explain) }; });
+    db.prepare('INSERT INTO quiz_attempts(user_id,lesson_id,score,total) VALUES(?,?,?,?)').run(c.user.id, l.id, score, qs.length); trackEvent(c.user.id,'quiz_attempted','lesson',l.id);
+    send(c.res, 200, { score, total: qs.length, results });
+  });
+  R('GET', '/api/dashboard', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const rows = db.prepare('SELECT c.id,c.slug,c.title,(SELECT COUNT(*) FROM lessons WHERE course_id=c.id) total,(SELECT COUNT(*) FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=? AND l.course_id=c.id) done,(SELECT code FROM certificates ce WHERE ce.user_id=e.user_id AND ce.course_id=c.id) certificate_code FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.user_id=?').all(c.user.id, c.user.id);
+    send(c.res, 200, { courses: rows, certificates: db.prepare('SELECT code,course_id,issued FROM certificates WHERE user_id=?').all(c.user.id), payments: db.prepare('SELECT ref,amount_kes,provider,status,created FROM payments WHERE user_id=?').all(c.user.id) });
+  });
+  R('POST', '/api/courses/:slug/certificate', (c, slug) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const co = db.prepare('SELECT * FROM courses WHERE slug=?').get(slug); if (!co) return err(c.res, 404, 'Not found');
+    if (!db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id)) return err(c.res, 403, 'Not enrolled');
+    const total = db.prepare('SELECT COUNT(*) n FROM lessons WHERE course_id=?').get(co.id).n;
+    const done = db.prepare('SELECT COUNT(*) n FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=? AND l.course_id=?').get(c.user.id, co.id).n;
+    if (!total || done < total) return err(c.res, 409, `Complete all lessons first (${done}/${total})`);
+    const code = 'SF-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+    db.prepare('INSERT OR IGNORE INTO certificates(code,user_id,course_id) VALUES(?,?,?)').run(code, c.user.id, co.id);
+    send(c.res, 200, db.prepare('SELECT code FROM certificates WHERE user_id=? AND course_id=?').get(c.user.id, co.id));
+  });
+  R('GET', '/api/verify/:code', (c, code) => {
+    const r = db.prepare('SELECT ce.code,ce.issued,u.name,co.title FROM certificates ce JOIN users u ON u.id=ce.user_id JOIN courses co ON co.id=ce.course_id WHERE ce.code=?').get(code);
+    r ? send(c.res, 200, { valid: true, ...r }) : err(c.res, 404, 'Certificate not found');
+  });
+  R('GET', '/api/certificates/:code.pdf', (c, code) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const r = db.prepare('SELECT ce.code,ce.issued,ce.user_id,u.name,co.title FROM certificates ce JOIN users u ON u.id=ce.user_id JOIN courses co ON co.id=ce.course_id WHERE ce.code=?').get(code);
+    if (!r) return err(c.res, 404, 'Certificate not found');
+    if (c.user.role !== 'admin' && r.user_id !== c.user.id) return err(c.res, 403, 'You cannot download another learner’s certificate');
+    const pdf = certificatePdf(r.name, r.title, r.code, r.issued, /^https:\/\//.test(env.PUBLIC_URL || '') ? env.PUBLIC_URL.replace(/\/$/, '') + '/verify/' + r.code : '');
+    c.res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="SkillForge-Certificate-${r.code}.pdf"`, 'Content-Length': pdf.length, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+    c.res.end(pdf);
+  });
+  // Shared by the signed webhook, the M-Pesa callback and status reconciliation. Idempotent.
+  const settlePayment = (p, ref, status) => {
+    db.prepare('UPDATE payments SET status=? WHERE ref=?').run(status, ref);
+    if (status === 'successful') { db.prepare('INSERT OR IGNORE INTO enrollments(user_id,course_id) VALUES(?,?)').run(p.user_id, p.course_id); const attr=db.prepare("SELECT * FROM referral_attributions WHERE referred_user_id=? AND status='registered'").get(p.user_id); const reward=Number(env.REFERRAL_REWARD_KES||0); if(attr && attr.referrer_id!==p.user_id && reward>0){ db.prepare("UPDATE referral_attributions SET status='qualified',qualifying_payment_ref=? WHERE id=?").run(ref,attr.id); db.prepare("INSERT OR IGNORE INTO reward_ledger(referral_id,referrer_id,amount_kes,payment_ref,reason) VALUES(?,?,?,?,?)").run(attr.id,attr.referrer_id,reward,ref,'Pending admin review after verified payment'); } }
+    if (status === 'refunded') { db.prepare('DELETE FROM enrollments WHERE user_id=? AND course_id=?').run(p.user_id, p.course_id); db.prepare("UPDATE reward_ledger SET status='reversed',reason='Qualifying payment refunded',updated=CURRENT_TIMESTAMP WHERE payment_ref=? AND status IN ('pending','approved')").run(ref); db.prepare("UPDATE referral_attributions SET status='rejected',reviewed=CURRENT_TIMESTAMP WHERE qualifying_payment_ref=?").run(ref); }
+  };
+  // Payments: pending record is created server-side; access is granted ONLY by a signed webhook.
+  const mpesa = mpesaLib.create(env);
+  const paystack = paystackLib.create(env);
+  R('POST', '/api/checkout', async (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const co = db.prepare('SELECT * FROM courses WHERE id=? AND published=1').get(Number(c.body.courseId)); if (!co) return err(c.res, 404, 'Course not found');
+    const want = String(c.body.provider || 'mpesa').toLowerCase();
+    const provider = want === 'paystack' || want === 'card' ? 'paystack' : 'mpesa';
+    const ref = 'SF' + crypto.randomBytes(8).toString('hex').toUpperCase();
+    if (db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id)) return err(c.res, 409, 'You are already enrolled in this course.');
+    if (co.price_kes < 1) return err(c.res, 400, 'This course has no price set.');
+    if (limited('co' + c.user.id, 5)) return err(c.res, 429, 'Too many payment attempts. Please wait a minute.');
+
+    if (provider === 'mpesa' && mpesa.configured) {
+      try {
+        const phone = mpesa.normalizePhone(c.body.phone); if (!phone) return err(c.res, 400, 'Enter a valid Safaricom number such as 0712345678.');
+        db.prepare("UPDATE payments SET status='cancelled' WHERE user_id=? AND course_id=? AND provider='mpesa' AND status='pending' AND created<datetime('now','-10 minutes')").run(c.user.id, co.id);
+        if (db.prepare("SELECT 1 x FROM payments WHERE user_id=? AND course_id=? AND provider='mpesa' AND status='pending'").get(c.user.id, co.id)) return err(c.res, 409, 'A payment request is already waiting on your phone. Complete it or wait a few minutes.');
+        db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, 'mpesa');
+        try {
+          const r = await mpesa.stkPush({ phone, amount: co.price_kes, ref, desc: 'Skillora' });
+          db.prepare('INSERT INTO payment_mpesa(ref,checkout_request_id,merchant_request_id,phone_last4) VALUES(?,?,?,?)').run(ref, r.checkoutRequestId, r.merchantRequestId || '', phone.slice(-4));
+          return send(c.res, 202, { ref, status: 'pending', provider: 'mpesa', live_payments_enabled: true, message: r.customerMessage });
+        } catch (e) { db.prepare("UPDATE payments SET status='failed' WHERE ref=?").run(ref); console.error('M-Pesa STK error:', e.message); return err(c.res, 502, 'We could not send the M-Pesa request. Check the number and try again.'); }
+      } catch (e) { console.error('checkout error:', e.message); return err(c.res, 500, 'Could not start checkout. Please try again.'); }
+    }
+
+    if (provider === 'paystack' && paystack.configured) {
+      try {
+        db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, 'paystack');
+        const callback = String(env.PUBLIC_URL || '').replace(/\/$/, '') + '/?payment=paystack&ref=' + encodeURIComponent(ref);
+        const r = await paystack.initialize({
+          email: c.user.email,
+          amountKes: co.price_kes,
+          ref,
+          callbackUrl: callback,
+          metadata: { user_id: c.user.id, course_id: co.id, course_slug: co.slug },
+        });
+        db.prepare('INSERT INTO payment_paystack(ref,access_code,authorization_url,paystack_ref) VALUES(?,?,?,?)').run(ref, r.accessCode || '', r.authorizationUrl || '', r.reference || ref);
+        return send(c.res, 202, { ref, status: 'pending', provider: 'paystack', live_payments_enabled: true, authorization_url: r.authorizationUrl, message: 'Continue to Paystack to complete payment.' });
+      } catch (e) {
+        db.prepare("UPDATE payments SET status='failed' WHERE ref=?").run(ref);
+        console.error('Paystack error:', e.message);
+        return err(c.res, 502, 'Could not start card payment. Please try again or use M-Pesa.');
+      }
+    }
+
+    // Fallback: record pending payment but do not grant access until a real provider confirms.
+    db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, provider);
+    const live = mpesa.configured || paystack.configured || !!(env.PAYMENT_PROVIDER && env.PAYMENT_API_KEY);
+    send(c.res, live ? 202 : 503, { ref, status: 'pending', provider, live_payments_enabled: live, message: live ? 'Awaiting provider confirmation' : 'Live payments are not enabled yet. Set MPESA_* or PAYSTACK_SECRET_KEY. No access has been granted.' });
+  });
+  R('POST', '/api/webhooks/mpesa/:secret', (c, secret) => {
+    if (!env.MPESA_CALLBACK_SECRET || secret.length !== String(env.MPESA_CALLBACK_SECRET).length || !crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(String(env.MPESA_CALLBACK_SECRET)))) return err(c.res, 401, 'Unauthorized');
+    const cb = c.body && c.body.Body && c.body.Body.stkCallback; if (!cb || !cb.CheckoutRequestID) return err(c.res, 400, 'Bad callback');
+    const ack = (d) => send(c.res, 200, { ResultCode: 0, ResultDesc: d });
+    const map = db.prepare('SELECT ref FROM payment_mpesa WHERE checkout_request_id=?').get(String(cb.CheckoutRequestID)); if (!map) return ack('Ignored');
+    const p = db.prepare('SELECT * FROM payments WHERE ref=?').get(map.ref); if (!p || p.status !== 'pending') return ack('Already processed');
+    if (Number(cb.ResultCode) === 0) {
+      const items = (cb.CallbackMetadata && cb.CallbackMetadata.Item) || [], val = (n) => (items.find(i => i.Name === n) || {}).Value;
+      if (Number(val('Amount')) !== p.amount_kes) { db.prepare("INSERT INTO audit_log(actor_id,action,target,detail) VALUES(NULL,'payment.amount_mismatch',?,?)").run(p.ref, `Paid ${val('Amount')} expected ${p.amount_kes}; receipt ${val('MpesaReceiptNumber')}. Review manually.`); return ack('Amount mismatch recorded'); }
+      const receipt = 'mpesa:' + String(val('MpesaReceiptNumber') || cb.CheckoutRequestID);
+      if (db.prepare('SELECT 1 x FROM webhook_events WHERE event_id=?').get(receipt)) return ack('Duplicate');
+      db.prepare('INSERT INTO webhook_events(event_id) VALUES(?)').run(receipt); settlePayment(p, p.ref, 'successful');
+    } else settlePayment(p, p.ref, Number(cb.ResultCode) === 1032 ? 'cancelled' : 'failed');
+    ack('Accepted');
+  });
+  R('GET', '/api/payments/:ref/status', async (c, ref) => {
+    try {
+      if (!mustUser(c)) return; if (limited('ps' + c.user.id, 30)) return err(c.res, 429, 'Too many requests');
+      let p = db.prepare('SELECT * FROM payments WHERE ref=?').get(ref); if (!p || (p.user_id !== c.user.id && c.user.role !== 'admin')) return err(c.res, 404, 'Payment not found');
+      const m = db.prepare('SELECT checkout_request_id FROM payment_mpesa WHERE ref=?').get(ref);
+      if (p.status === 'pending' && m && mpesa.configured && Date.now() - Date.parse(p.created.replace(' ', 'T') + 'Z') > 20000) {
+        try { const q = await mpesa.stkQuery(m.checkout_request_id); if (!q.pending) { settlePayment(p, ref, q.success ? 'successful' : (q.code === 1032 ? 'cancelled' : 'failed')); p = db.prepare('SELECT * FROM payments WHERE ref=?').get(ref); } } catch (e) { console.error('STK query error:', e.message); }
+      }
+      send(c.res, 200, { ref, status: p.status, course_id: p.course_id });
+    } catch (e) { err(c.res, 500, 'Could not check the payment'); }
+  });
+  R('POST', '/api/webhooks/payment', (c) => {
+    const sig = String(c.req.headers['x-signature'] || '');
+    const want = crypto.createHmac('sha256', secret).update(c.raw).digest('hex');
+    if (!secret || sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return err(c.res, 401, 'Bad signature');
+    const { event_id, ref, status, amount_kes } = c.body;
+    const p = db.prepare('SELECT * FROM payments WHERE ref=?').get(ref); if (!event_id || !p) return err(c.res, 404, 'Unknown payment');
+    if (db.prepare('SELECT 1 x FROM webhook_events WHERE event_id=?').get(event_id)) return send(c.res, 200, { duplicate: true });
+    db.prepare('INSERT INTO webhook_events(event_id) VALUES(?)').run(event_id);
+    if (!['successful', 'failed', 'cancelled', 'refunded'].includes(status)) return err(c.res, 400, 'Bad status');
+    if (status === 'successful' && Number(amount_kes) !== p.amount_kes) return err(c.res, 409, 'Amount mismatch');
+    settlePayment(p, ref, status);
+    send(c.res, 200, { ok: true });
+  });
+  const admin = (fn) => (c, ...a) => { if (!c.user) return err(c.res, 401, 'Sign in required'); if (c.user.role !== 'admin') return err(c.res, 403, 'Admins only'); return fn(c, ...a); };
+  
+  R('GET', '/api/admin/deleted-users', admin((c) => send(c.res, 200, db.prepare("SELECT id,email,name,role,created,deleted_at,deletion_reason FROM users WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 200").all())));
+  R('POST', '/api/admin/users/:id/restore', admin((c, id) => {
+    const u = db.prepare('SELECT * FROM users WHERE id=?').get(Number(id));
+    if (!u || !u.deleted_at) return err(c.res, 404, 'Deleted user not found');
+    // Require a fresh email to restore (tombstone emails are not usable)
+    const email = String(c.body.email || '').toLowerCase().trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err(c.res, 400, 'Provide a valid email to restore this account');
+    try {
+      db.prepare("UPDATE users SET email=?, name=COALESCE(NULLIF(?, ''), name), deleted_at=NULL, deletion_reason='', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(email, String(c.body.name || '').slice(0, 80), u.id);
+    } catch { return err(c.res, 409, 'That email is already in use'); }
+    audit(c, 'account.restore', id, email);
+    send(c.res, 200, { ok: true });
+  }));
+  R('DELETE', '/api/admin/users/:id/purge', admin((c, id) => {
+    const u = db.prepare('SELECT * FROM users WHERE id=?').get(Number(id));
+    if (!u) return err(c.res, 404, 'User not found');
+    if (u.role === 'admin') return err(c.res, 400, 'Refuse to purge admin accounts from this tool');
+    if (Number(id) === c.user.id) return err(c.res, 400, 'Cannot purge yourself');
+    // Hard delete learning rows then user (order matters for FKs without ON DELETE CASCADE on all tables)
+    const uid = u.id;
+    const tables = ['sessions','enrollments','progress','quiz_attempts','payments','certificates','assignments','review_cards','exercise_completions','cohort_members','learner_outcomes','user_contacts','reminder_log','ai_usage'];
+    for (const t of tables) {
+      try { db.prepare(`DELETE FROM ${t} WHERE user_id=?`).run(uid); } catch (_) {}
+    }
+    try { db.prepare('DELETE FROM users WHERE id=?').run(uid); } catch (e) { return err(c.res, 500, 'Purge failed: ' + e.message); }
+    audit(c, 'account.purge', id, u.email);
+    send(c.res, 200, { ok: true });
+  }));
+  R('POST', '/api/admin/backup', admin((c) => {
+    try {
+      const dest = backup(db, dbFile, require('path').join(require('path').dirname(dbFile), 'backups'));
+      audit(c, 'db.backup', dest, '');
+      send(c.res, 200, { ok: true, path: dest, message: 'Backup written on the server. Copy it off-site regularly.' });
+    } catch (e) {
+      err(c.res, 500, e.message || 'Backup failed');
+    }
+  }));
+  R('GET', '/api/admin/payment-providers', admin((c) => send(c.res, 200, {
+    mpesa: { configured: mpesa.configured, env: env.MPESA_ENV || 'sandbox' },
+    paystack: { configured: paystack.configured, public_key_set: !!env.PAYSTACK_PUBLIC_KEY },
+    generic: { configured: !!(env.PAYMENT_PROVIDER && env.PAYMENT_API_KEY) },
+  })));
+
+R('GET', '/api/admin/payments', admin((c) => send(c.res, 200, db.prepare('SELECT p.*,u.email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC').all())));
+  R('GET', '/api/admin/students', admin((c) => send(c.res, 200, db.prepare("SELECT u.id,u.email,u.name,(SELECT COUNT(*) FROM progress WHERE user_id=u.id) lessons_done FROM users u WHERE role='student'").all())));
+  R('GET', '/api/admin/courses', admin((c) => send(c.res, 200, db.prepare('SELECT id,slug,title,summary,price_kes,published,content_status,(SELECT COUNT(*) FROM lessons WHERE course_id=courses.id) lessons FROM courses ORDER BY title').all())));
+  R('PUT', '/api/admin/courses/:id', admin((c, id) => {
+    const { price_kes, published } = c.body;
+    if (!Number.isInteger(price_kes) || price_kes < 0) return err(c.res, 400, 'price_kes must be a non-negative integer');
+    db.prepare('UPDATE courses SET price_kes=?, published=? WHERE id=?').run(price_kes, published ? 1 : 0, Number(id)); send(c.res, 200, { ok: true });
+  }));
+  R('GET', '/api/admin/overview', admin((c) => send(c.res, 200, {
+    students: db.prepare("SELECT COUNT(*) n FROM users WHERE role='student'").get().n,
+    courses: db.prepare('SELECT COUNT(*) n FROM courses').get().n,
+    published_courses: db.prepare('SELECT COUNT(*) n FROM courses WHERE published=1').get().n,
+    enrolments: db.prepare('SELECT COUNT(*) n FROM enrollments').get().n,
+    certificates: db.prepare('SELECT COUNT(*) n FROM certificates').get().n,
+    open_tickets: db.prepare("SELECT COUNT(*) n FROM support_tickets WHERE status!='resolved'").get().n,
+    pending_assignments: db.prepare("SELECT COUNT(*) n FROM assignments WHERE status='submitted'").get().n
+  })));
+  R('GET', '/api/admin/enrolments', admin((c) => send(c.res, 200, db.prepare('SELECT e.created,u.id user_id,u.name,u.email,c.id course_id,c.title course FROM enrollments e JOIN users u ON u.id=e.user_id JOIN courses c ON c.id=e.course_id ORDER BY e.created DESC').all())));
+  R('GET', '/api/admin/certificates', admin((c) => send(c.res, 200, db.prepare('SELECT ce.code,ce.issued,u.name,u.email,c.title course FROM certificates ce JOIN users u ON u.id=ce.user_id JOIN courses c ON c.id=ce.course_id ORDER BY ce.issued DESC').all())));
+  R('PUT', '/api/admin/courses/:id/details', admin((c, id) => {
+    const { title, summary, slug, price_kes, published } = c.body;
+    if (!title || String(title).trim().length > 140 || !Number.isInteger(price_kes) || price_kes < 0) return err(c.res, 400, 'A title (max 140 characters) and non-negative integer price are required');
+    try { const r = db.prepare('UPDATE courses SET title=?,summary=?,slug=?,price_kes=?,published=? WHERE id=?').run(String(title).trim(), String(summary||''), String(slug||'').trim(), price_kes, published ? 1 : 0, Number(id)); if (!r.changes) return err(c.res,404,'Course not found'); send(c.res,200,{ok:true}); } catch { err(c.res,409,'Course slug already exists or is invalid'); }
+  }));
+  R('POST', '/api/admin/courses', admin((c) => {
+    const { title, slug, summary, price_kes, published } = c.body;
+    if (!title || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug||'') || !Number.isInteger(price_kes) || price_kes < 0) return err(c.res,400,'Title, URL-safe slug and non-negative integer price required');
+    try { const r=db.prepare('INSERT INTO courses(slug,title,summary,price_kes,published,content_status) VALUES(?,?,?,?,?,?)').run(slug,title,String(summary||''),price_kes,published?1:0,'draft'); send(c.res,201,{id:Number(r.lastInsertRowid)}); } catch { err(c.res,409,'Course slug already exists'); }
+  }));
+  R('GET', '/api/admin/courses/:id/lessons', admin((c,id) => send(c.res,200,db.prepare('SELECT id,course_id,pos,title,body,is_free FROM lessons WHERE course_id=? ORDER BY pos').all(Number(id)))));
+  R('POST', '/api/admin/courses/:id/lessons', admin((c,id) => {
+    const { pos,title,body,is_free }=c.body;
+    if (!Number.isInteger(pos)||pos<1||!title||!body) return err(c.res,400,'Lesson position, title and body required');
+    try { const r=db.prepare('INSERT INTO lessons(course_id,pos,title,body,is_free) VALUES(?,?,?,?,?)').run(Number(id),pos,String(title),String(body),is_free?1:0); send(c.res,201,{id:Number(r.lastInsertRowid)}); } catch { err(c.res,409,'Course not found or lesson position already used'); }
+  }));
+  R('PUT', '/api/admin/lessons/:id', admin((c,id) => {
+    const {pos,title,body,is_free}=c.body; if (!Number.isInteger(pos)||pos<1||!title||!body) return err(c.res,400,'Lesson position, title and body required');
+    try { const r=db.prepare('UPDATE lessons SET pos=?,title=?,body=?,is_free=? WHERE id=?').run(pos,String(title),String(body),is_free?1:0,Number(id)); if(!r.changes)return err(c.res,404,'Lesson not found');send(c.res,200,{ok:true}); } catch { err(c.res,409,'Lesson position already used in this course'); }
+  }));
+  R('DELETE', '/api/admin/lessons/:id', admin((c,id) => { const r=db.prepare('DELETE FROM lessons WHERE id=?').run(Number(id)); r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Lesson not found'); }));
+  R('POST', '/api/assignments', (c) => {
+    if (!c.user) return err(c.res,401,'Sign in required');
+    const {course_id,lesson_id,title,filename,mime_type,data,submission_text}=c.body;
+    if(!Number.isInteger(Number(course_id))||!title||!filename||!mime_type||!data||String(data).length>700000) return err(c.res,400,'Course, title, filename, MIME type and file data (max ~500 KB) required');
+    if(!db.prepare('SELECT 1 FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id,Number(course_id)))return err(c.res,403,'Enrol in this course before submitting an assignment');
+    if(!/^[-\w .()]+$/.test(filename)||!['application/pdf','text/plain','image/png','image/jpeg','application/zip'].includes(mime_type))return err(c.res,400,'Unsupported filename or file type');
+    const b64=String(data).replace(/^data:[^;]+;base64,/,''); if(!/^[A-Za-z0-9+/]*={0,2}$/.test(b64))return err(c.res,400,'File must be base64 encoded'); const buf=Buffer.from(b64,'base64'); if(buf.length>512000)return err(c.res,413,'Maximum upload size is 500 KB');
+    const r=db.prepare('INSERT INTO assignments(user_id,course_id,lesson_id,title,filename,mime_type,file_data,submission_text) VALUES(?,?,?,?,?,?,?,?)').run(c.user.id,Number(course_id),lesson_id?Number(lesson_id):null,String(title).slice(0,160),filename,mime_type,buf,String(submission_text||'').slice(0,4000));send(c.res,201,{id:Number(r.lastInsertRowid),status:'submitted'});
+  });
+  R('GET', '/api/assignments', (c) => { if(!c.user)return err(c.res,401,'Sign in required'); const q=c.user.role==='admin'?db.prepare('SELECT a.id,a.user_id,u.name,u.email,a.course_id,c.title course,a.lesson_id,a.title,a.filename,a.mime_type,a.submission_text,a.status,a.instructor_feedback,a.submitted,a.reviewed FROM assignments a JOIN users u ON u.id=a.user_id JOIN courses c ON c.id=a.course_id ORDER BY a.submitted DESC').all():db.prepare('SELECT id,course_id,lesson_id,title,filename,mime_type,submission_text,status,instructor_feedback,submitted,reviewed FROM assignments WHERE user_id=? ORDER BY submitted DESC').all(c.user.id);send(c.res,200,q); });
+  R('GET', '/api/assignments/:id/file', (c,id) => { if(!c.user)return err(c.res,401,'Sign in required');const a=db.prepare('SELECT * FROM assignments WHERE id=?').get(Number(id));if(!a)return err(c.res,404,'Assignment not found');if(c.user.role!=='admin'&&a.user_id!==c.user.id)return err(c.res,403,'Not allowed');c.res.writeHead(200,{'Content-Type':a.mime_type,'Content-Disposition':`attachment; filename="${a.filename.replace(/["\\]/g,'_')}"`,'X-Content-Type-Options':'nosniff','Cache-Control':'private, no-store'});c.res.end(a.file_data); });
+  R('PUT', '/api/admin/assignments/:id/review', admin((c,id) => { const {status,feedback}=c.body;if(!['reviewed','resubmit'].includes(status)||!String(feedback||'').trim())return err(c.res,400,'Status reviewed/resubmit and feedback required');const r=db.prepare('UPDATE assignments SET status=?,instructor_feedback=?,reviewed=CURRENT_TIMESTAMP WHERE id=?').run(status,String(feedback).slice(0,4000),Number(id));r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Assignment not found'); }));
+  R('POST', '/api/support/tickets', (c) => {if(!c.user)return err(c.res,401,'Sign in required');const {subject,message}=c.body;if(!String(subject||'').trim()||!String(message||'').trim())return err(c.res,400,'Subject and message required');const r=db.prepare('INSERT INTO support_tickets(user_id,subject) VALUES(?,?)').run(c.user.id,String(subject).slice(0,160));db.prepare('INSERT INTO support_replies(ticket_id,user_id,message) VALUES(?,?,?)').run(Number(r.lastInsertRowid),c.user.id,String(message).slice(0,5000));send(c.res,201,{id:Number(r.lastInsertRowid),status:'open'});});
+  R('GET', '/api/support/tickets', (c) => {if(!c.user)return err(c.res,401,'Sign in required');const tickets=c.user.role==='admin'?db.prepare('SELECT t.*,u.name,u.email FROM support_tickets t JOIN users u ON u.id=t.user_id ORDER BY t.updated DESC').all():db.prepare('SELECT * FROM support_tickets WHERE user_id=? ORDER BY updated DESC').all(c.user.id);send(c.res,200,tickets);});
+  R('GET', '/api/support/tickets/:id/replies', (c,id) => {if(!c.user)return err(c.res,401,'Sign in required');const t=db.prepare('SELECT * FROM support_tickets WHERE id=?').get(Number(id));if(!t)return err(c.res,404,'Ticket not found');if(c.user.role!=='admin'&&t.user_id!==c.user.id)return err(c.res,403,'Not allowed');send(c.res,200,db.prepare('SELECT r.id,r.user_id,u.name,u.role,r.message,r.created FROM support_replies r JOIN users u ON u.id=r.user_id WHERE ticket_id=? ORDER BY r.id').all(Number(id)));});
+  R('POST', '/api/support/tickets/:id/replies', (c,id) => {if(!c.user)return err(c.res,401,'Sign in required');const t=db.prepare('SELECT * FROM support_tickets WHERE id=?').get(Number(id));if(!t)return err(c.res,404,'Ticket not found');if(c.user.role!=='admin'&&t.user_id!==c.user.id)return err(c.res,403,'Not allowed');const message=String(c.body.message||'').trim();if(!message)return err(c.res,400,'Message required');db.prepare('INSERT INTO support_replies(ticket_id,user_id,message) VALUES(?,?,?)').run(Number(id),c.user.id,message.slice(0,5000));const status=c.user.role==='admin'?(c.body.status==='resolved'?'resolved':'waiting_student'):'open';db.prepare('UPDATE support_tickets SET status=?,updated=CURRENT_TIMESTAMP WHERE id=?').run(status,Number(id));send(c.res,201,{ok:true,status});});
+  R('PUT', '/api/admin/support/tickets/:id', admin((c,id) => {const status=c.body.status;if(!['open','waiting_student','resolved'].includes(status))return err(c.res,400,'Invalid ticket status');const r=db.prepare('UPDATE support_tickets SET status=?,updated=CURRENT_TIMESTAMP WHERE id=?').run(status,Number(id));r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Ticket not found');}));
+
+
+  // Learner-outcome features: portfolio, community, opportunities, business teams and reporting.
+  const mustUser = (c) => { if (!c.user) { err(c.res,401,'Sign in required'); return false; } return true; };
+  R('GET','/api/portfolio',(c)=>{if(!mustUser(c))return;const own=c.user.role==='admin'&&new URL(c.req.url,'http://x').searchParams.get('all')==='1';send(c.res,200,db.prepare(`SELECT p.id,p.user_id,u.name,p.title,p.description,p.skills,p.project_url,p.visibility,p.created FROM portfolio_projects p JOIN users u ON u.id=p.user_id WHERE ${own?'1=1':'(p.user_id=? OR p.visibility=\'public\')'} ORDER BY p.created DESC`).all(...(own?[]:[c.user.id])));});
+  R('POST','/api/portfolio',(c)=>{if(!mustUser(c))return;const b=c.body;if(!String(b.title||'').trim()||!String(b.description||'').trim())return err(c.res,400,'Project title and description required');if(b.project_url&&!/^https:\/\//i.test(b.project_url))return err(c.res,400,'Project URL must use HTTPS');const r=db.prepare('INSERT INTO portfolio_projects(user_id,title,description,skills,project_url,visibility) VALUES(?,?,?,?,?,?)').run(c.user.id,String(b.title).slice(0,120),String(b.description).slice(0,3000),String(b.skills||'').slice(0,300),String(b.project_url||'').slice(0,500),b.visibility==='public'?'public':'private');trackEvent(c.user.id,'project_submitted','portfolio',Number(r.lastInsertRowid));send(c.res,201,{id:Number(r.lastInsertRowid)});});
+  R('DELETE','/api/portfolio/:id',(c,id)=>{if(!mustUser(c))return;const r=db.prepare('DELETE FROM portfolio_projects WHERE id=? AND user_id=?').run(Number(id),c.user.id);r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Project not found');});
+  R('GET','/api/opportunities',(c)=>send(c.res,200,db.prepare("SELECT id,title,organization,description,type,location,apply_url,created FROM opportunities WHERE status='open' ORDER BY created DESC").all()));
+  R('POST','/api/admin/opportunities',admin((c)=>{const b=c.body;if(!String(b.title||'').trim()||!String(b.organization||'').trim()||!String(b.description||'').trim())return err(c.res,400,'Title, organization and description required');if(b.apply_url&&!/^https:\/\//i.test(b.apply_url))return err(c.res,400,'Apply URL must use HTTPS');const r=db.prepare('INSERT INTO opportunities(title,organization,description,type,location,apply_url,created_by) VALUES(?,?,?,?,?,?,?)').run(String(b.title).slice(0,160),String(b.organization).slice(0,160),String(b.description).slice(0,3000),String(b.type||'project').slice(0,40),String(b.location||'Remote').slice(0,100),String(b.apply_url||'').slice(0,500),c.user.id);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'opportunity.create',String(r.lastInsertRowid),String(b.title));send(c.res,201,{id:Number(r.lastInsertRowid)});}));
+  R('PUT','/api/admin/opportunities/:id',admin((c,id)=>{const status=c.body.status;if(!['open','closed'].includes(status))return err(c.res,400,'Status must be open or closed');const r=db.prepare('UPDATE opportunities SET status=? WHERE id=?').run(status,Number(id));r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Opportunity not found');}));
+  R('GET','/api/discussions',(c)=>{if(!mustUser(c))return;const courseId=Number(new URL(c.req.url,'http://x').searchParams.get('course_id')||0);send(c.res,200,db.prepare('SELECT d.id,d.user_id,u.name,d.course_id,d.parent_id,d.body,d.created FROM discussions d JOIN users u ON u.id=d.user_id WHERE (?=0 OR d.course_id=?) ORDER BY d.created DESC LIMIT 200').all(courseId,courseId));});
+  R('POST','/api/discussions',(c)=>{if(!mustUser(c))return;const b=c.body,body=String(b.body||'').trim();if(!body||body.length>3000)return err(c.res,400,'Message must be 1–3000 characters');let courseId=b.course_id?Number(b.course_id):null;if(courseId&&!db.prepare('SELECT id FROM courses WHERE id=?').get(courseId))return err(c.res,404,'Course not found');const parent=b.parent_id?Number(b.parent_id):null;if(parent&&!db.prepare('SELECT id FROM discussions WHERE id=?').get(parent))return err(c.res,404,'Parent post not found');const r=db.prepare('INSERT INTO discussions(user_id,course_id,parent_id,body) VALUES(?,?,?,?)').run(c.user.id,courseId,parent,body);send(c.res,201,{id:Number(r.lastInsertRowid)});});
+  R('GET','/api/reviews',(c)=>{const id=Number(new URL(c.req.url,'http://x').searchParams.get('course_id')||0);send(c.res,200,db.prepare('SELECT r.id,r.rating,r.review,r.created,u.name FROM course_reviews r JOIN users u ON u.id=r.user_id WHERE (?=0 OR r.course_id=?) ORDER BY r.created DESC').all(id,id));});
+  R('POST','/api/reviews',(c)=>{if(!mustUser(c))return;const b=c.body,id=Number(b.course_id),rating=Number(b.rating);if(!db.prepare('SELECT id FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id,id))return err(c.res,403,'Only enrolled learners can review a course');if(!Number.isInteger(rating)||rating<1||rating>5)return err(c.res,400,'Rating must be 1 to 5');db.prepare('INSERT INTO course_reviews(user_id,course_id,rating,review) VALUES(?,?,?,?) ON CONFLICT(user_id,course_id) DO UPDATE SET rating=excluded.rating,review=excluded.review,created=CURRENT_TIMESTAMP').run(c.user.id,id,rating,String(b.review||'').slice(0,2000));send(c.res,201,{ok:true});});
+  R('POST','/api/teams',(c)=>{if(!mustUser(c))return;const b=c.body,seats=Number(b.seats);if(!String(b.name||'').trim()||!Number.isInteger(seats)||seats<1||seats>500)return err(c.res,400,'Team name and seat count (1–500) required');const r=db.prepare('INSERT INTO business_teams(owner_id,name,seats) VALUES(?,?,?)').run(c.user.id,String(b.name).slice(0,120),seats);send(c.res,201,{id:Number(r.lastInsertRowid),name:b.name,seats});});
+  R('GET','/api/teams',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare('SELECT t.id,t.name,t.seats,t.created,(SELECT COUNT(*) FROM team_members m WHERE m.team_id=t.id AND m.status<>\'removed\') members FROM business_teams t WHERE owner_id=? ORDER BY id DESC').all(c.user.id));});
+  R('POST','/api/teams/:id/invite',(c,id)=>{if(!mustUser(c))return;const t=db.prepare('SELECT * FROM business_teams WHERE id=? AND owner_id=?').get(Number(id),c.user.id);if(!t)return err(c.res,404,'Team not found');const email=String(c.body.email||'').trim().toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return err(c.res,400,'Valid email required');const count=db.prepare("SELECT COUNT(*) n FROM team_members WHERE team_id=? AND status<>'removed'").get(t.id).n;if(count>=t.seats)return err(c.res,409,'All team seats are in use');db.prepare('INSERT INTO team_members(team_id,email) VALUES(?,?) ON CONFLICT(team_id,email) DO UPDATE SET status=\'invited\'').run(t.id,email);send(c.res,201,{ok:true,email,status:'invited'});});
+  R('POST', '/api/ai-tutor', async (c) => {
+    if (!mustUser(c)) return;
+    const q = String(c.body.question || '').trim();
+    if (!q || q.length > 2000) return err(c.res, 400, 'Ask a question (maximum 2,000 characters)');
+    if (limited('tutor:' + c.user.id, 12)) return err(c.res, 429, 'Tutor limit reached. Please try again in a minute.');
+    const course = c.body.course_id ? db.prepare('SELECT title,summary FROM courses WHERE id=?').get(Number(c.body.course_id)) : null;
+    const guided = () => ({ mode: 'guided', message: `AI tutor is not connected yet, so this is a study guide rather than a generated AI answer.\n\nYour question: ${q}\n\nTry this learning sequence:\n1. Identify the key concept in ${course ? course.title : 'your current lesson'}.\n2. Write what you already understand and where you are stuck.\n3. Build a tiny example and test one change at a time.\n4. Explain the result in your own words.\n\n${course ? `Course context: ${course.summary || course.title}` : 'Tip: include the lesson title and a short example for more focused help.'}\n\nNever paste passwords, payment details or private student information here.` });
+    if (!env.OPENAI_API_KEY) return send(c.res, 200, guided());
+    { const day = new Date().toISOString().slice(0, 10), u = db.prepare('SELECT COALESCE(SUM(n),0) t, COALESCE(SUM(CASE WHEN user_id=? THEN n END),0) mine FROM ai_usage WHERE day=?').get(c.user.id, day);
+      if (u.mine >= Number(env.AI_DAILY_PER_USER || 20)) return err(c.res, 429, 'You have used today\u2019s AI tutor questions. Your limit resets tomorrow; the study-guide steps still work.');
+      if (u.t >= Number(env.AI_DAILY_TOTAL || 500)) return err(c.res, 503, 'The AI tutor has reached its daily capacity. Please try again tomorrow.');
+      db.prepare('INSERT INTO ai_usage(day,user_id,n) VALUES(?,?,1) ON CONFLICT(day,user_id) DO UPDATE SET n=n+1').run(day, c.user.id); }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const upstream = await (env.fetch || fetch)('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: env.OPENAI_MODEL || 'gpt-5-mini',
+          instructions: 'You are Skillora Academy’s patient, practical tutor. Teach rather than merely give answers. Explain concepts clearly for beginners, break tasks into steps, use small examples, ask one useful check-for-understanding question, and never claim certainty when unsure. Do not complete graded assignments dishonestly. Never request passwords, payment details, or sensitive personal data. Use course context only to help the learner.',
+          input: `Learner question: ${q}\n\nCourse context: ${course ? course.title + ' — ' + (course.summary || '') : 'General study question'}`,
+          max_output_tokens: 900
+        }),
+        signal: controller.signal
+      });
+      if (!upstream.ok) {
+        console.error('AI tutor provider status:', upstream.status);
+        if (upstream.status === 429) return err(c.res, 429, 'The AI tutor is busy or its provider quota is exhausted. Try again later.');
+        return err(c.res, 503, 'The AI tutor is temporarily unavailable. Please try again later.');
+      }
+      const data = await upstream.json();
+      const answer = String(data.output_text || (data.output || []).flatMap(o => o.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('') || '').trim();
+      if (!answer) return err(c.res, 503, 'The AI tutor returned an empty answer. Please try again.');
+      send(c.res, 200, { mode: 'ai', message: answer });
+    } catch (e) {
+      console.error('AI tutor error:', e.name);
+      err(c.res, 503, 'The AI tutor could not be reached. Check the server configuration and try again.');
+    } finally { clearTimeout(timer); }
+  });
+  R('GET','/api/admin/analytics',admin((c)=>send(c.res,200,{students:db.prepare("SELECT COUNT(*) n FROM users WHERE role='student'").get().n,enrollments:db.prepare('SELECT COUNT(*) n FROM enrollments').get().n,successful_payments:db.prepare("SELECT COUNT(*) n FROM payments WHERE status='successful'").get().n,revenue_kes:db.prepare("SELECT COALESCE(SUM(amount_kes),0) n FROM payments WHERE status='successful'").get().n,completed_lessons:db.prepare('SELECT COUNT(*) n FROM progress').get().n,certificates:db.prepare('SELECT COUNT(*) n FROM certificates').get().n,open_tickets:db.prepare("SELECT COUNT(*) n FROM support_tickets WHERE status<>'resolved'").get().n,course_completion:db.prepare('SELECT c.title,COUNT(DISTINCT e.user_id) enrolled,COUNT(DISTINCT CASE WHEN x.done=(SELECT COUNT(*) FROM lessons WHERE course_id=c.id) AND x.done>0 THEN x.user_id END) completed FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id LEFT JOIN (SELECT p.user_id,l.course_id,COUNT(*) done FROM progress p JOIN lessons l ON l.id=p.lesson_id GROUP BY p.user_id,l.course_id) x ON x.user_id=e.user_id AND x.course_id=c.id GROUP BY c.id ORDER BY c.title').all()})));
+  R('POST','/api/admin/certificates/:code/revoke',admin((c,code)=>{const cert=db.prepare('SELECT code FROM certificates WHERE code=?').get(code);if(!cert)return err(c.res,404,'Certificate not found');const reason=String(c.body.reason||'Admin revocation').slice(0,500);db.prepare('INSERT INTO certificate_status(code,status,reason) VALUES(?,\'revoked\',?) ON CONFLICT(code) DO UPDATE SET status=\'revoked\',reason=excluded.reason,updated=CURRENT_TIMESTAMP').run(code,reason);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'certificate.revoke',code,reason);send(c.res,200,{ok:true,code,status:'revoked'});}));
+  R('GET','/api/admin/audit-log',admin((c)=>send(c.res,200,db.prepare('SELECT a.id,a.action,a.target,a.detail,a.created,u.name actor FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 500').all())));
+
+  R('GET','/api/achievements',(c)=>{if(!mustUser(c))return;const completed=db.prepare('SELECT COUNT(*) n FROM progress WHERE user_id=?').get(c.user.id).n;const courses=db.prepare('SELECT COUNT(*) n FROM certificates WHERE user_id=?').get(c.user.id).n;const projects=db.prepare('SELECT COUNT(*) n FROM portfolio_projects WHERE user_id=?').get(c.user.id).n;const streak=db.prepare("SELECT COUNT(DISTINCT date(done_at)) n FROM progress WHERE user_id=? AND date(done_at)>=date('now','-6 days')").get(c.user.id).n;const badges=[];if(completed>=1)badges.push({key:'first-step',title:'First Step',description:'Completed your first lesson'});if(completed>=5)badges.push({key:'practice-five',title:'Practice Builder',description:'Completed five lessons'});if(courses>=1)badges.push({key:'course-finish',title:'Course Finisher',description:'Earned a completion certificate'});if(projects>=1)badges.push({key:'show-your-work',title:'Show Your Work',description:'Added a portfolio project'});if(streak>=3)badges.push({key:'consistent',title:'Consistent Learner',description:'Studied on three different days in the last week'});send(c.res,200,{completed_lessons:completed,certificates:courses,projects,study_days_last_7:streak,badges});});
+  R('POST','/api/admin/coupons',admin((c)=>{const b=c.body,code=String(b.code||'').trim().toUpperCase(),pct=Number(b.percent_off),max=Number(b.max_uses||100);if(!/^[A-Z0-9_-]{3,32}$/.test(code)||!Number.isInteger(pct)||pct<1||pct>90||!Number.isInteger(max)||max<1)return err(c.res,400,'Use a 3–32 character code, 1–90% discount and positive use limit');db.prepare('INSERT INTO coupons(code,percent_off,max_uses,expires,active) VALUES(?,?,?,?,1)').run(code,pct,max,b.expires||null);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'coupon.create',code,`${pct}% discount; max ${max}`);send(c.res,201,{code,percent_off:pct,max_uses:max});}));
+  R('POST','/api/coupons/validate',(c)=>{const code=String(c.body.code||'').trim().toUpperCase();const x=db.prepare("SELECT code,percent_off,max_uses,uses,expires FROM coupons WHERE code=? AND active=1").get(code);if(!x||x.uses>=x.max_uses||(x.expires&&x.expires<new Date().toISOString().slice(0,10)))return err(c.res,404,'Coupon is invalid, expired or fully used');send(c.res,200,{valid:true,code:x.code,percent_off:x.percent_off});});
+
+
+  // Adaptive learning: recommendations are calculated from the learner's own quiz history.
+  R('POST','/api/skill-assessment',(c)=>{if(!mustUser(c))return;const courseId=Number(c.body.course_id),answers=c.body.answers;if(!Number.isInteger(courseId)||!Array.isArray(answers)||!db.prepare('SELECT id FROM courses WHERE id=? AND published=1').get(courseId))return err(c.res,400,'A published course and answer array are required');const qs=db.prepare('SELECT q.id,q.answer,l.id lesson_id FROM quizzes q JOIN lessons l ON l.id=q.lesson_id WHERE l.course_id=? ORDER BY l.pos,q.id LIMIT 30').all(courseId);if(!qs.length)return err(c.res,409,'This course has no assessment questions yet');let score=0;const submitted=new Map(answers.map(a=>[Number(a.question_id),Number(a.answer)]));for(const q of qs)if(submitted.get(q.id)===q.answer)score++;const pct=Math.round(score/qs.length*100),level=pct<40?'foundation':pct<75?'developing':'ready';db.prepare('INSERT INTO skill_assessments(user_id,course_id,score,total,level,answers) VALUES(?,?,?,?,?,?)').run(c.user.id,courseId,score,qs.length,level,JSON.stringify([...submitted.entries()]));send(c.res,200,{score,total:qs.length,percent:pct,level,recommendation:level==='foundation'?'Start with the first lessons and repeat the guided examples.':level==='developing'?'Review missed topics and complete a small practice project before advancing.':'You appear ready for the course projects; complete a capstone to demonstrate the skill.'});});
+  R('GET','/api/learning-path',(c)=>{if(!mustUser(c))return;const courses=db.prepare('SELECT c.id,c.title,c.summary,c.price_kes,(SELECT COUNT(*) FROM lessons l WHERE l.course_id=c.id) lessons,(SELECT COUNT(*) FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE l.course_id=c.id AND p.user_id=?) completed,(SELECT level FROM skill_assessments a WHERE a.course_id=c.id AND a.user_id=? ORDER BY a.id DESC LIMIT 1) level FROM courses c WHERE c.published=1 ORDER BY c.title').all(c.user.id,c.user.id);send(c.res,200,{courses:courses.map(x=>({...x,progress_percent:x.lessons?Math.round(x.completed/x.lessons*100):0,next_step:x.level==='foundation'?'Review fundamentals':x.level==='developing'?'Practise missed topics':x.level==='ready'?'Build the capstone':'Take a short skills assessment'}))});});
+
+  // Mentorship clinics are only visible when an administrator publishes real sessions.
+  R('GET','/api/mentor-clinics',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare("SELECT m.id,m.title,m.mentor_name,m.description,m.starts_at,m.capacity,m.status,(SELECT COUNT(*) FROM clinic_bookings b WHERE b.clinic_id=m.id AND b.status='booked') booked,(SELECT status FROM clinic_bookings b WHERE b.clinic_id=m.id AND b.user_id=?) my_booking FROM mentor_clinics m WHERE m.status='open' AND m.starts_at>=datetime('now') ORDER BY m.starts_at").all(c.user.id));});
+  R('POST','/api/mentor-clinics/:id/book',(c,id)=>{if(!mustUser(c))return;const m=db.prepare("SELECT * FROM mentor_clinics WHERE id=? AND status='open' AND starts_at>=datetime('now')").get(Number(id));if(!m)return err(c.res,404,'Clinic is not available');const count=db.prepare("SELECT COUNT(*) n FROM clinic_bookings WHERE clinic_id=? AND status='booked'").get(m.id).n;if(count>=m.capacity)return err(c.res,409,'Clinic is full');try{db.prepare("INSERT INTO clinic_bookings(clinic_id,user_id) VALUES(?,?)").run(m.id,c.user.id)}catch{return err(c.res,409,'You already have a booking')};send(c.res,201,{ok:true,status:'booked'});});
+  R('DELETE','/api/mentor-clinics/:id/book',(c,id)=>{if(!mustUser(c))return;const r=db.prepare("UPDATE clinic_bookings SET status='cancelled' WHERE clinic_id=? AND user_id=? AND status='booked'").run(Number(id),c.user.id);r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Active booking not found');});
+  R('POST','/api/admin/mentor-clinics',admin((c)=>{const b=c.body,capacity=Number(b.capacity);if(!String(b.title||'').trim()||!String(b.mentor_name||'').trim()||!String(b.description||'').trim()||!b.starts_at||!Number.isInteger(capacity)||capacity<1||capacity>500||!Number.isFinite(Date.parse(b.starts_at)))return err(c.res,400,'Valid title, mentor, description, date and capacity required');const r=db.prepare('INSERT INTO mentor_clinics(title,mentor_name,description,starts_at,capacity,created_by) VALUES(?,?,?,?,?,?)').run(String(b.title).slice(0,160),String(b.mentor_name).slice(0,120),String(b.description).slice(0,2000),new Date(b.starts_at).toISOString(),capacity,c.user.id);send(c.res,201,{id:Number(r.lastInsertRowid)});}));
+  R('GET','/api/admin/mentor-clinics',admin((c)=>send(c.res,200,db.prepare('SELECT m.*,(SELECT COUNT(*) FROM clinic_bookings b WHERE b.clinic_id=m.id AND b.status=\'booked\') booked FROM mentor_clinics m ORDER BY starts_at DESC').all())));
+
+  // Scholarships have a review trail; an application never automatically promises funding.
+  R('POST','/api/scholarships/applications',(c)=>{if(!mustUser(c))return;const reason=String(c.body.reason||'').trim();if(reason.length<30||reason.length>3000)return err(c.res,400,'Explain your circumstances in 30–3,000 characters');const existing=db.prepare("SELECT id FROM scholarship_applications WHERE user_id=? AND status='pending'").get(c.user.id);if(existing)return err(c.res,409,'You already have a pending application');const r=db.prepare('INSERT INTO scholarship_applications(user_id,reason) VALUES(?,?)').run(c.user.id,reason);send(c.res,201,{id:Number(r.lastInsertRowid),status:'pending',message:'Application received; funding is not guaranteed.'});});
+  R('GET','/api/scholarships/applications', (c)=>{if(!mustUser(c))return;send(c.res,200,c.user.role==='admin'?db.prepare('SELECT s.id,s.user_id,u.name,u.email,s.reason,s.status,s.admin_note,s.created,s.reviewed FROM scholarship_applications s JOIN users u ON u.id=s.user_id ORDER BY s.created DESC').all():db.prepare('SELECT id,reason,status,admin_note,created,reviewed FROM scholarship_applications WHERE user_id=? ORDER BY created DESC').all(c.user.id));});
+  R('PUT','/api/admin/scholarships/:id',admin((c,id)=>{const status=c.body.status,note=String(c.body.admin_note||'').slice(0,1500);if(!['approved','declined'].includes(status))return err(c.res,400,'Status must be approved or declined');const r=db.prepare('UPDATE scholarship_applications SET status=?,admin_note=?,reviewed=CURRENT_TIMESTAMP WHERE id=? AND status=\'pending\'').run(status,note,Number(id));if(!r.changes)return err(c.res,404,'Pending application not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?,?)'.replace('VALUES(?,?,?,?,?)','VALUES(?,?,?,?)')).run(c.user.id,'scholarship.review',String(id),status);send(c.res,200,{ok:true,status});}));
+
+  // Genuine partner challenges only; no seeded fake opportunities.
+  R('GET','/api/business-challenges',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare("SELECT b.id,b.title,b.organization,b.description,b.skills,b.deadline,b.created,(SELECT status FROM challenge_applications a WHERE a.challenge_id=b.id AND a.user_id=?) my_status FROM business_challenges b WHERE b.status='open' AND (b.deadline IS NULL OR b.deadline>=date('now')) ORDER BY b.created DESC").all(c.user.id));});
+  R('POST','/api/admin/business-challenges',admin((c)=>{const b=c.body;if(!String(b.title||'').trim()||!String(b.organization||'').trim()||!String(b.description||'').trim())return err(c.res,400,'Title, organization and description required');const r=db.prepare('INSERT INTO business_challenges(title,organization,description,skills,deadline,created_by) VALUES(?,?,?,?,?,?)').run(String(b.title).slice(0,160),String(b.organization).slice(0,160),String(b.description).slice(0,3000),String(b.skills||'').slice(0,300),b.deadline||null,c.user.id);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'challenge.create',String(r.lastInsertRowid),String(b.title));send(c.res,201,{id:Number(r.lastInsertRowid)});}));
+  R('POST','/api/business-challenges/:id/apply',(c,id)=>{if(!mustUser(c))return;const challenge=db.prepare("SELECT id FROM business_challenges WHERE id=? AND status='open' AND (deadline IS NULL OR deadline>=date('now'))").get(Number(id));if(!challenge)return err(c.res,404,'Challenge is not open');const message=String(c.body.message||'').trim();if(message.length<20||message.length>2000)return err(c.res,400,'Add a 20–2,000 character introduction');try{db.prepare('INSERT INTO challenge_applications(challenge_id,user_id,message) VALUES(?,?,?)').run(Number(id),c.user.id,message)}catch{return err(c.res,409,'You already applied')};send(c.res,201,{ok:true,status:'submitted'});});
+  R('GET','/api/admin/challenge-applications',admin((c)=>send(c.res,200,db.prepare('SELECT a.id,a.challenge_id,a.user_id,a.message,a.status,a.created,u.name,u.email,b.title challenge FROM challenge_applications a JOIN users u ON u.id=a.user_id JOIN business_challenges b ON b.id=a.challenge_id ORDER BY a.created DESC').all())));
+  R('PUT','/api/admin/challenge-applications/:id',admin((c,id)=>{const status=c.body.status;if(!['shortlisted','declined'].includes(status))return err(c.res,400,'Status must be shortlisted or declined');const r=db.prepare('UPDATE challenge_applications SET status=? WHERE id=?').run(status,Number(id));r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Application not found');}));
+
+  // Safety reporting for community posts, opportunities and other user-generated content.
+  R('POST','/api/reports',(c)=>{if(!mustUser(c))return;const b=c.body,type=String(b.target_type||''),id=Number(b.target_id),reason=String(b.reason||'').trim();if(!['discussion','opportunity','portfolio','review','challenge'].includes(type)||!Number.isInteger(id)||id<1||reason.length<10||reason.length>1500)return err(c.res,400,'Valid target type/id and a 10–1,500 character reason required');const r=db.prepare('INSERT INTO abuse_reports(reporter_id,target_type,target_id,reason) VALUES(?,?,?,?)').run(c.user.id,type,id,reason);send(c.res,201,{id:Number(r.lastInsertRowid),status:'open'});});
+  R('GET','/api/admin/reports',admin((c)=>send(c.res,200,db.prepare('SELECT r.id,r.reporter_id,u.name reporter,r.target_type,r.target_id,r.reason,r.status,r.admin_note,r.created,r.reviewed FROM abuse_reports r JOIN users u ON u.id=r.reporter_id ORDER BY r.created DESC').all())));
+  R('PUT','/api/admin/reports/:id',admin((c,id)=>{const status=c.body.status,note=String(c.body.admin_note||'').slice(0,1500);if(!['reviewing','resolved','dismissed'].includes(status))return err(c.res,400,'Invalid report status');const r=db.prepare('UPDATE abuse_reports SET status=?,admin_note=?,reviewed=CURRENT_TIMESTAMP WHERE id=?').run(status,note,Number(id));if(!r.changes)return err(c.res,404,'Report not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'report.review',String(id),status);send(c.res,200,{ok:true,status});}));
+
+  R('GET','/api/admin/quality-report',admin((c)=>{const since="datetime('now','-30 days')";send(c.res,200,{generated_at:new Date().toISOString(),period_days:30,students:db.prepare("SELECT COUNT(*) n FROM users WHERE role='student'").get().n,new_students_30d:db.prepare(`SELECT COUNT(*) n FROM users WHERE role='student' AND created>=${since}`).get().n,enrollments:db.prepare('SELECT COUNT(*) n FROM enrollments').get().n,active_learners_30d:db.prepare(`SELECT COUNT(DISTINCT user_id) n FROM progress WHERE done_at>=${since}`).get().n,lesson_completions_30d:db.prepare(`SELECT COUNT(*) n FROM progress WHERE done_at>=${since}`).get().n,quiz_attempts_30d:db.prepare(`SELECT COUNT(*) n FROM quiz_attempts WHERE created>=${since}`).get().n,average_quiz_percent:db.prepare('SELECT ROUND(AVG(100.0*score/NULLIF(total,0)),1) n FROM quiz_attempts').get().n,refunds:db.prepare("SELECT COUNT(*) n FROM payments WHERE status='refunded'").get().n,open_support_tickets:db.prepare("SELECT COUNT(*) n FROM support_tickets WHERE status<>'resolved'").get().n,open_safety_reports:db.prepare("SELECT COUNT(*) n FROM abuse_reports WHERE status IN('open','reviewing')").get().n,scholarships_pending:db.prepare("SELECT COUNT(*) n FROM scholarship_applications WHERE status='pending'").get().n,clinics_upcoming:db.prepare("SELECT COUNT(*) n FROM mentor_clinics WHERE status='open' AND starts_at>=datetime('now')").get().n});}));
+
+  R('GET','/api/admin/backup-info',admin((c)=>send(c.res,200,{database_configured:!!(env.DB_FILE||'./data/skillforge.db'),backup_command:'npm run backup',note:'Run the backup command on the persistent host and copy the resulting file to secure off-site storage. Test restoration before production.'})));
+
+
+
+  const pub = path.join(__dirname, '..', 'public');
+
+  // Retention suite: every response is based on persistent records; no sample activity is generated.
+  const todayISO = () => new Date().toISOString().slice(0,10);
+  const trackEvent = (uid,type,targetType='',targetId=null) => db.prepare('INSERT INTO learning_events(user_id,event_type,target_type,target_id) VALUES(?,?,?,?)').run(uid,type,targetType,targetId);
+  R('GET','/api/learner/home',(c)=>{if(!mustUser(c))return;const uid=c.user.id,today=todayISO();let mission=db.prepare('SELECT * FROM daily_missions WHERE user_id=? AND mission_date=?').get(uid,today);if(!mission){const next=db.prepare("SELECT l.id lesson_id,l.title lesson,c.title course FROM lessons l JOIN courses c ON c.id=l.course_id LEFT JOIN progress p ON p.lesson_id=l.id AND p.user_id=? WHERE p.lesson_id IS NULL AND c.published=1 AND (l.is_free=1 OR EXISTS(SELECT 1 FROM enrollments e WHERE e.user_id=? AND e.course_id=c.id)) ORDER BY c.title,l.pos LIMIT 1").get(uid,uid);if(next){const r=db.prepare('INSERT OR IGNORE INTO daily_missions(user_id,mission_date,kind,title,description,target_id) VALUES(?,?,?,?,?,?)').run(uid,today,'lesson','Continue: '+next.title,'Continue your next available lesson in '+next.course,next.lesson_id);mission=db.prepare('SELECT * FROM daily_missions WHERE id=?').get(Number(r.lastInsertRowid))||db.prepare('SELECT * FROM daily_missions WHERE user_id=? AND mission_date=?').get(uid,today);}else{const project=db.prepare('SELECT id,title FROM portfolio_projects WHERE user_id=? ORDER BY updated DESC LIMIT 1').get(uid);const title=project?'Improve your portfolio project':'Create your first portfolio project';const r=db.prepare('INSERT OR IGNORE INTO daily_missions(user_id,mission_date,kind,title,description,target_id) VALUES(?,?,?,?,?,?)').run(uid,today,'portfolio',title,'Spend a short session building or improving a real project.',project?.id||null);mission=db.prepare('SELECT * FROM daily_missions WHERE id=?').get(Number(r.lastInsertRowid))||db.prepare('SELECT * FROM daily_missions WHERE user_id=? AND mission_date=?').get(uid,today);}}
+    const courses=db.prepare("SELECT c.id,c.slug,c.title,(SELECT COUNT(*) FROM lessons l WHERE l.course_id=c.id) total,(SELECT COUNT(*) FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=? AND l.course_id=c.id) done FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.user_id=? ORDER BY e.created DESC").all(uid,uid).map(x=>({...x,progress_percent:x.total?Math.round(x.done/x.total*100):0}));const streakRows=db.prepare("SELECT DISTINCT date(created) day FROM learning_events WHERE user_id=? AND event_type IN ('lesson_completed','quiz_attempted','project_submitted','challenge_submitted') ORDER BY day DESC LIMIT 60").all(uid);let streak=0,expected=today;for(const row of streakRows){if(row.day===expected){streak++;const d=new Date(expected+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);expected=d.toISOString().slice(0,10);}else if(row.day<expected)break;}const goal=db.prepare('SELECT weekly_target,career_goal FROM learner_goals WHERE user_id=?').get(uid)||{weekly_target:3,career_goal:''};const week=db.prepare("SELECT COUNT(DISTINCT date(created)) n FROM learning_events WHERE user_id=? AND created>=datetime('now','-6 days') AND event_type IN ('lesson_completed','quiz_attempted','project_submitted','challenge_submitted')").get(uid).n;send(c.res,200,{mission,courses,streak_days:streak,active_days_last_7:week,weekly_target:goal.weekly_target,career_goal:goal.career_goal});});
+  R('POST','/api/learner/mission/:id/status',(c,id)=>{if(!mustUser(c))return;const status=c.body.status;if(!['completed','dismissed'].includes(status))return err(c.res,400,'Status must be completed or dismissed');const m=db.prepare('SELECT * FROM daily_missions WHERE id=? AND user_id=?').get(Number(id),c.user.id);if(!m)return err(c.res,404,'Mission not found');db.prepare('UPDATE daily_missions SET status=?,completed_at=CASE WHEN ?=\'completed\' THEN CURRENT_TIMESTAMP ELSE completed_at END WHERE id=?').run(status,status,m.id);if(status==='completed'){trackEvent(c.user.id,'mission_completed','mission',m.id);db.prepare('INSERT OR IGNORE INTO milestone_awards(user_id,milestone_key,title) VALUES(?,?,?)').run(c.user.id,'daily-mission-first','Completed a daily skill mission');}send(c.res,200,{ok:true,status});});
+  R('PUT','/api/learner/goals',(c)=>{if(!mustUser(c))return;const target=Number(c.body.weekly_target),career=String(c.body.career_goal||'').trim();if(!Number.isInteger(target)||target<1||target>14||career.length>160)return err(c.res,400,'Weekly target must be 1–14 and career goal under 160 characters');db.prepare('INSERT INTO learner_goals(user_id,weekly_target,career_goal,updated) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET weekly_target=excluded.weekly_target,career_goal=excluded.career_goal,updated=CURRENT_TIMESTAMP').run(c.user.id,target,career);send(c.res,200,{ok:true,weekly_target:target,career_goal:career});});
+  R('GET','/api/learner/milestones',(c)=>{if(!mustUser(c))return;const uid=c.user.id,lessons=db.prepare('SELECT COUNT(*) n FROM progress WHERE user_id=?').get(uid).n,projects=db.prepare('SELECT COUNT(*) n FROM portfolio_projects WHERE user_id=?').get(uid).n,certs=db.prepare('SELECT COUNT(*) n FROM certificates WHERE user_id=?').get(uid).n;const items=[['first-lesson','First lesson',lessons>=1],['five-lessons','Five lessons completed',lessons>=5],['first-project','First portfolio project',projects>=1],['first-certificate','First course certificate',certs>=1]];for(const [key,title,earned] of items)if(earned)db.prepare('INSERT OR IGNORE INTO milestone_awards(user_id,milestone_key,title) VALUES(?,?,?)').run(uid,key,title);send(c.res,200,{earned:db.prepare('SELECT milestone_key,title,awarded FROM milestone_awards WHERE user_id=? ORDER BY awarded').all(uid),next:items.filter(x=>!x[2]).map(x=>({key:x[0],title:x[1]}))});});
+  R('POST','/api/portfolio/:id/feedback',(c,id)=>{if(!mustUser(c))return;const project=db.prepare('SELECT * FROM portfolio_projects WHERE id=?').get(Number(id));if(!project)return err(c.res,404,'Project not found');if(project.user_id!==c.user.id&&project.visibility!=='public')return err(c.res,404,'Project not found');if(project.user_id===c.user.id)return err(c.res,400,'You cannot review your own project');const feedback=String(c.body.feedback||'').trim();if(feedback.length<10||feedback.length>2000)return err(c.res,400,'Feedback must be 10–2,000 characters');const rubric={accuracy:Number(c.body.accuracy)||0,usability:Number(c.body.usability)||0,completeness:Number(c.body.completeness)||0};if(Object.values(rubric).some(v=>!Number.isInteger(v)||v<1||v>5))return err(c.res,400,'Rubric scores must be integers from 1 to 5');db.prepare('INSERT INTO project_feedback(project_id,reviewer_id,feedback,rubric_json) VALUES(?,?,?,?) ON CONFLICT(project_id,reviewer_id) DO UPDATE SET feedback=excluded.feedback,rubric_json=excluded.rubric_json,created=CURRENT_TIMESTAMP').run(project.id,c.user.id,feedback,JSON.stringify(rubric));send(c.res,201,{ok:true});});
+  R('GET','/api/portfolio/:id/feedback',(c,id)=>{if(!mustUser(c))return;const project=db.prepare('SELECT * FROM portfolio_projects WHERE id=?').get(Number(id));if(!project|| (project.user_id!==c.user.id&&project.visibility!=='public'))return err(c.res,404,'Project not found');send(c.res,200,db.prepare("SELECT f.id,f.feedback,f.rubric_json,f.created,u.name reviewer FROM project_feedback f JOIN users u ON u.id=f.reviewer_id WHERE f.project_id=? AND f.status='visible' ORDER BY f.created DESC").all(project.id).map(x=>({...x,rubric:JSON.parse(x.rubric_json)})));});
+  R('POST','/api/study-groups',(c)=>{if(!mustUser(c))return;const name=String(c.body.name||'').trim(),description=String(c.body.description||'').trim();if(name.length<3||name.length>100||description.length>1000)return err(c.res,400,'Group name must be 3–100 characters; description up to 1,000');const r=db.prepare('INSERT INTO study_groups(owner_id,name,description,visibility) VALUES(?,?,?,?)').run(c.user.id,name,description,c.body.visibility==='public'?'public':'private');db.prepare("INSERT INTO study_group_members(group_id,user_id,role) VALUES(?,?,'owner')").run(Number(r.lastInsertRowid),c.user.id);send(c.res,201,{id:Number(r.lastInsertRowid),name});});
+  R('GET','/api/study-groups',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare("SELECT g.id,g.name,g.description,g.visibility,g.created,m.role,(SELECT COUNT(*) FROM study_group_members gm WHERE gm.group_id=g.id AND gm.status='active') members FROM study_groups g JOIN study_group_members m ON m.group_id=g.id AND m.user_id=? AND m.status='active' ORDER BY g.created DESC").all(c.user.id));});
+  R('POST','/api/study-groups/:id/join',(c,id)=>{if(!mustUser(c))return;const g=db.prepare("SELECT id FROM study_groups WHERE id=? AND visibility='public'").get(Number(id));if(!g)return err(c.res,404,'Public group not found');db.prepare("INSERT INTO study_group_members(group_id,user_id,role,status) VALUES(?,?,'member','active') ON CONFLICT(group_id,user_id) DO UPDATE SET status='active'").run(g.id,c.user.id);send(c.res,200,{ok:true});});
+  R('DELETE','/api/study-groups/:id/members/:userId',(c,id,userId)=>{if(!mustUser(c))return;const g=db.prepare('SELECT * FROM study_groups WHERE id=?').get(Number(id));if(!g)return err(c.res,404,'Group not found');if(g.owner_id!==c.user.id&&c.user.role!=='admin')return err(c.res,403,'Group owner or admin required');if(Number(userId)===g.owner_id)return err(c.res,409,'Transfer ownership before removing the owner');db.prepare("UPDATE study_group_members SET status='removed' WHERE group_id=? AND user_id=?").run(g.id,Number(userId));send(c.res,200,{ok:true});});
+  R('GET','/api/weekly-challenges',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare("SELECT w.id,w.title,w.description,w.starts_on,w.ends_on,w.rubric,(SELECT status FROM weekly_challenge_submissions s WHERE s.challenge_id=w.id AND s.user_id=?) my_status FROM weekly_challenges w WHERE w.status='open' AND w.starts_on<=date('now') AND w.ends_on>=date('now') ORDER BY w.ends_on").all(c.user.id));});
+  R('POST','/api/weekly-challenges/:id/submit',(c,id)=>{if(!mustUser(c))return;const w=db.prepare("SELECT * FROM weekly_challenges WHERE id=? AND status='open' AND starts_on<=date('now') AND ends_on>=date('now')").get(Number(id));if(!w)return err(c.res,404,'Challenge is not open');const body=String(c.body.submission_text||'').trim(),url=String(c.body.project_url||'');if(body.length<20||body.length>3000||(url&&!/^https:\/\//i.test(url)))return err(c.res,400,'Submission text must be 20–3,000 characters and project URL must use HTTPS');const r=db.prepare('INSERT INTO weekly_challenge_submissions(challenge_id,user_id,project_url,submission_text) VALUES(?,?,?,?) ON CONFLICT(challenge_id,user_id) DO UPDATE SET project_url=excluded.project_url,submission_text=excluded.submission_text,status=\'submitted\',created=CURRENT_TIMESTAMP').run(w.id,c.user.id,url,body);trackEvent(c.user.id,'challenge_submitted','challenge',w.id);send(c.res,201,{ok:true});});
+  R('POST','/api/admin/weekly-challenges',admin((c)=>{const b=c.body,title=String(b.title||'').trim(),desc=String(b.description||'').trim(),start=String(b.starts_on||''),end=String(b.ends_on||'');if(title.length<3||title.length>160||desc.length<20||desc.length>3000||!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(end)||end<start)return err(c.res,400,'Valid title, description and date range required');const r=db.prepare('INSERT INTO weekly_challenges(title,description,starts_on,ends_on,rubric,status,created_by) VALUES(?,?,?,?,?,\'open\',?)').run(title,desc,start,end,String(b.rubric||'').slice(0,1500),c.user.id);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'weekly_challenge.create',String(r.lastInsertRowid),title);send(c.res,201,{id:Number(r.lastInsertRowid)});}));
+  R('GET','/api/career',(c)=>{if(!mustUser(c))return;send(c.res,200,{goals:db.prepare("SELECT * FROM career_goals WHERE user_id=? ORDER BY created DESC").all(c.user.id),applications:db.prepare('SELECT * FROM career_applications WHERE user_id=? ORDER BY updated DESC').all(c.user.id),recommendations:db.prepare("SELECT c.id,c.slug,c.title,c.summary,c.price_kes,(SELECT COUNT(*) FROM lessons WHERE course_id=c.id) lessons,(SELECT COUNT(*) FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=? AND l.course_id=c.id) completed FROM courses c WHERE c.published=1 AND NOT EXISTS(SELECT 1 FROM enrollments e WHERE e.user_id=? AND e.course_id=c.id) ORDER BY (SELECT COUNT(*) FROM lessons WHERE course_id=c.id),c.title LIMIT 5").all(c.user.id,c.user.id)});});
+  R('POST','/api/career/goals',(c)=>{if(!mustUser(c))return;const goal=String(c.body.goal||'').trim(),date=c.body.target_date||null;if(goal.length<3||goal.length>160||(date&&!/^\d{4}-\d{2}-\d{2}$/.test(date)))return err(c.res,400,'Goal must be 3–160 characters with an optional YYYY-MM-DD target date');const r=db.prepare('INSERT INTO career_goals(user_id,goal,target_date) VALUES(?,?,?)').run(c.user.id,goal,date);send(c.res,201,{id:Number(r.lastInsertRowid)});});
+  R('POST','/api/career/applications',(c)=>{if(!mustUser(c))return;const b=c.body,org=String(b.organization||'').trim(),role=String(b.role_title||'').trim(),url=String(b.source_url||'');if(org.length<2||org.length>160||role.length<2||role.length>160||(url&&!/^https:\/\//i.test(url)))return err(c.res,400,'Organization and role are required; URL must use HTTPS');const r=db.prepare('INSERT INTO career_applications(user_id,organization,role_title,source_url,follow_up,notes) VALUES(?,?,?,?,?,?)').run(c.user.id,org,role,url,b.follow_up||null,String(b.notes||'').slice(0,2000));send(c.res,201,{id:Number(r.lastInsertRowid)});});
+  R('PUT','/api/career/applications/:id',(c,id)=>{if(!mustUser(c))return;const status=c.body.status;if(!['saved','applied','interview','offer','rejected','withdrawn'].includes(status))return err(c.res,400,'Invalid application status');const r=db.prepare('UPDATE career_applications SET status=?,updated=CURRENT_TIMESTAMP WHERE id=? AND user_id=?').run(status,Number(id),c.user.id);r.changes?send(c.res,200,{ok:true}):err(c.res,404,'Application not found');});
+  // Skillora excellence APIs: skill passport, practical labs, career planning and course quality.
+  const practiceLabs = [
+    {key:'web-landing-page',title:'Build a responsive landing page',track:'Web development',level:'beginner',skills:['HTML','CSS','accessibility'],brief:'Create a mobile-first landing page for a local service. Include a clear heading, service description, contact action, responsive layout and accessible labels.',deliverables:['HTTPS project link or repository','Short explanation of layout decisions','Checklist of accessibility checks']},
+    {key:'data-insight-brief',title:'Turn a dataset into business insights',track:'Data and AI',level:'beginner',skills:['spreadsheets','data analysis','visualisation'],brief:'Use a real or clearly labelled synthetic dataset. Clean inconsistent values, calculate at least three useful metrics, create a chart and write three evidence-based insights.',deliverables:['Workbook or dashboard link','Three insights tied to metrics','Notes on data limitations']},
+    {key:'small-business-cashflow',title:'Create a small-business cash-flow plan',track:'Business',level:'beginner',skills:['budgeting','spreadsheets','planning'],brief:'Build a 3-month cash-flow forecast with opening balance, expected income, operating costs and closing balance. Explain assumptions and identify one risk.',deliverables:['Spreadsheet or document link','Assumptions list','One practical risk mitigation']},
+    {key:'client-project-proposal',title:'Write a professional client proposal',track:'Freelancing',level:'beginner',skills:['client communication','scoping','estimation'],brief:'Choose a realistic client brief and prepare scope, deliverables, timeline, revision limits, exclusions, price estimate and acceptance criteria.',deliverables:['Proposal document link','Milestone plan','Clear assumptions and exclusions']},
+    {key:'safe-security-review',title:'Perform a safe security review',track:'Cybersecurity',level:'beginner',skills:['security awareness','risk assessment','documentation'],brief:'Review a fictional small-business website scenario or your own system with permission. Identify risks, rate likelihood and impact, and recommend defensive fixes. Do not scan systems without authorization.',deliverables:['Risk register','Prioritised defensive recommendations','Statement of scope and permission']}
+  ];
+  R('GET','/api/practice-labs',(c)=>send(c.res,200,practiceLabs.map(l=>({...l,submission:c.user?db.prepare('SELECT id,status,project_url,answer_text,reviewer_feedback,updated FROM practice_lab_submissions WHERE user_id=? AND lab_key=?').get(c.user.id,l.key)||null:null}))));
+  R('POST','/api/practice-labs/:key/submit',(c,key)=>{if(!mustUser(c))return;const lab=practiceLabs.find(x=>x.key===key);if(!lab)return err(c.res,404,'Practice lab not found');const answer=String(c.body.answer_text||'').trim(),url=String(c.body.project_url||'').trim();if(answer.length<30||answer.length>5000||(url&&!/^https:\/\//i.test(url)))return err(c.res,400,'Provide 30–5,000 characters of work and an optional HTTPS project link');db.prepare("INSERT INTO practice_lab_submissions(user_id,lab_key,answer_text,project_url) VALUES(?,?,?,?) ON CONFLICT(user_id,lab_key) DO UPDATE SET answer_text=excluded.answer_text,project_url=excluded.project_url,status='submitted',reviewer_feedback='',updated=CURRENT_TIMESTAMP").run(c.user.id,key,answer,url);trackEvent(c.user.id,'practice_lab_submitted','lab',null);send(c.res,201,{ok:true,status:'submitted',message:'Work saved. This submission is not automatically graded; instructor review must be enabled for human feedback.'});});
+  R('GET','/api/skill-passport',(c)=>{if(!mustUser(c))return;const user=db.prepare('SELECT id,name FROM users WHERE id=?').get(c.user.id);const courses=db.prepare("SELECT c.title,c.slug,ce.code certificate_code,ce.issued,(SELECT COUNT(*) FROM lessons l WHERE l.course_id=c.id) total_lessons,(SELECT COUNT(*) FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=? AND l.course_id=c.id) completed_lessons FROM certificates ce JOIN courses c ON c.id=ce.course_id WHERE ce.user_id=? ORDER BY ce.issued DESC").all(c.user.id,c.user.id);const projects=db.prepare("SELECT id,title,description,skills,project_url,created FROM portfolio_projects WHERE user_id=? AND visibility='public' ORDER BY created DESC").all(c.user.id);const assessments=db.prepare('SELECT a.score,a.total,a.level,a.created,c.title course FROM skill_assessments a JOIN courses c ON c.id=a.course_id WHERE a.user_id=? ORDER BY a.created DESC').all(c.user.id);const row=db.prepare('SELECT share_token,public_enabled,updated FROM skill_passports WHERE user_id=?').get(c.user.id);send(c.res,200,{name:user.name,certificates:courses,public_projects:projects,assessments,share:{enabled:!!row?.public_enabled,token:row?.public_enabled?row.share_token:null,url:row?.public_enabled&&env.PUBLIC_URL?env.PUBLIC_URL.replace(/\/$/,'')+'/api/skill-passport/'+row.share_token:null},notice:'Course certificates show course completion. Skill assessments and project evidence are listed separately; neither guarantees employment.'});});
+  R('POST','/api/skill-passport/share',(c)=>{if(!mustUser(c))return;const enabled=!!c.body.enabled;let row=db.prepare('SELECT share_token FROM skill_passports WHERE user_id=?').get(c.user.id);if(enabled&&!row){const token=crypto.randomBytes(24).toString('hex');db.prepare('INSERT INTO skill_passports(user_id,share_token,public_enabled) VALUES(?,?,1)').run(c.user.id,token);row={share_token:token};}else if(enabled){db.prepare('UPDATE skill_passports SET public_enabled=1,updated=CURRENT_TIMESTAMP WHERE user_id=?').run(c.user.id);}else{db.prepare('UPDATE skill_passports SET public_enabled=0,updated=CURRENT_TIMESTAMP WHERE user_id=?').run(c.user.id);}send(c.res,200,{ok:true,enabled,token:enabled?row.share_token:null,url:enabled&&env.PUBLIC_URL?env.PUBLIC_URL.replace(/\/$/,'')+'/api/skill-passport/'+row.share_token:null});});
+  R('GET','/api/skill-passport/:token',(c,token)=>{const owner=db.prepare('SELECT u.id,u.name FROM skill_passports p JOIN users u ON u.id=p.user_id WHERE p.share_token=? AND p.public_enabled=1').get(token);if(!owner)return err(c.res,404,'Public skill passport not found');const certificates=db.prepare('SELECT c.title,ce.code,ce.issued FROM certificates ce JOIN courses c ON c.id=ce.course_id WHERE ce.user_id=? ORDER BY ce.issued DESC').all(owner.id);const projects=db.prepare("SELECT title,description,skills,project_url,created FROM portfolio_projects WHERE user_id=? AND visibility='public' ORDER BY created DESC").all(owner.id);const assessments=db.prepare('SELECT a.score,a.total,a.level,a.created,c.title course FROM skill_assessments a JOIN courses c ON c.id=a.course_id WHERE a.user_id=? ORDER BY a.created DESC').all(owner.id);send(c.res,200,{name:owner.name,certificates,projects,assessments,notice:'Only certificates, public projects and recorded assessments are shown. This profile does not imply job placement or accreditation.'});});
+  R('POST','/api/courses/:id/report',(c,id)=>{if(!mustUser(c))return;const course=db.prepare('SELECT id FROM courses WHERE id=?').get(Number(id));if(!course)return err(c.res,404,'Course not found');const category=String(c.body.category||'other'),details=String(c.body.details||'').trim();if(!['incorrect_content','outdated_content','accessibility','broken_exercise','other'].includes(category)||details.length<10||details.length>2000)return err(c.res,400,'Choose a report category and provide 10–2,000 characters of detail');const r=db.prepare('INSERT INTO course_quality_reports(user_id,course_id,category,details) VALUES(?,?,?,?)').run(c.user.id,course.id,category,details);send(c.res,201,{id:Number(r.lastInsertRowid),status:'open'});});
+  R('GET','/api/admin/course-quality',admin((c)=>{const reports=db.prepare('SELECT r.*,u.name learner,c.title course FROM course_quality_reports r JOIN users u ON u.id=r.user_id JOIN courses c ON c.id=r.course_id ORDER BY CASE r.status WHEN \'open\' THEN 0 WHEN \'reviewing\' THEN 1 ELSE 2 END,r.created DESC LIMIT 300').all();const quality=db.prepare("SELECT c.id,c.title,COUNT(DISTINCT e.user_id) enrolled,COUNT(DISTINCT CASE WHEN q.id IS NOT NULL THEN q.user_id END) quiz_learners,COUNT(DISTINCT CASE WHEN (SELECT COUNT(*) FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=e.user_id AND l.course_id=c.id)=(SELECT COUNT(*) FROM lessons WHERE course_id=c.id) AND (SELECT COUNT(*) FROM lessons WHERE course_id=c.id)>0 THEN e.user_id END) completed,(SELECT COUNT(*) FROM course_quality_reports r WHERE r.course_id=c.id AND r.status IN ('open','reviewing')) open_reports FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id LEFT JOIN quiz_attempts q ON q.user_id=e.user_id GROUP BY c.id ORDER BY open_reports DESC,completed DESC").all();send(c.res,200,{reports,quality,definitions:{enrolled:'Distinct enrolled users from the current database.',completed:'Enrolled users who completed all current course lessons.',open_reports:'Learner reports not yet resolved or dismissed.'}});}));
+  R('PUT','/api/admin/course-quality/:id',(c,id)=>admin((x)=>{const status=String(x.body.status||''),note=String(x.body.admin_note||'').slice(0,1500);if(!['reviewing','resolved','dismissed'].includes(status))return err(x.res,400,'Invalid report status');const r=db.prepare('UPDATE course_quality_reports SET status=?,admin_note=?,reviewed=CURRENT_TIMESTAMP WHERE id=?').run(status,note,Number(id));if(!r.changes)return err(x.res,404,'Report not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(x.user.id,'course_quality.'+status,String(id),note);send(x.res,200,{ok:true,status});})(c));
+  R('POST','/api/career/plan',(c)=>{if(!mustUser(c))return;const goal=String(c.body.goal||'').trim();const level=String(c.body.level||'beginner');const hours=Number(c.body.hours_per_week||5);if(goal.length<3||goal.length>160||!['beginner','some_experience','experienced'].includes(level)||!Number.isFinite(hours)||hours<1||hours>40)return err(c.res,400,'Enter a career goal, valid experience level and 1–40 weekly hours');const keywords=goal.toLowerCase();const family=/(data|analyst|excel|power bi|sql)/.test(keywords)?['excel-business-dashboards','data-analysis-spreadsheets']:/design|ux|ui|graphic/.test(keywords)?['ux-ui-design-starter']:/market|sales|content|social/.test(keywords)?['digital-marketing-sales','short-video-editing']:/security|cyber/.test(keywords)?['cybersecurity-foundations']:/python|software|web|developer|program/.test(keywords)?['python-programming','ai-workflows']:/freelan|client|business|entrepreneur/.test(keywords)?['freelancing-client-ready','bookkeeping-small-business']:['productivity-no-code-automation','project-management-practical'];const courses=family.map(slug=>db.prepare('SELECT id,slug,title,summary,(SELECT COUNT(*) FROM lessons WHERE course_id=courses.id) lessons FROM courses WHERE slug=? AND published=1').get(slug)).filter(Boolean);const weeks=Math.max(2,Math.ceil(courses.reduce((n,x)=>n+x.lessons,0)/Math.max(1,hours)));const plan={goal,experience_level:level,hours_per_week:hours,estimated_weeks:weeks,steps:[{week:1,action:'Complete the first recommended course lessons and take notes on concepts you cannot yet explain.'},{week:2,action:'Complete a practical lab and publish a project with a clear explanation of your decisions.'},{week:3,action:'Ask for feedback, revise the project and update your skill passport.'},{week:4,action:'Prepare a truthful CV, practise interviews and apply to a small number of relevant verified opportunities.'}],recommended_courses:courses,disclaimer:'This is a rules-based starter plan, not a generated AI career assessment or guarantee of employment. Adjust it to your background and local opportunities.'};db.prepare('INSERT INTO career_goals(user_id,goal,target_date) VALUES(?,?,NULL)').run(c.user.id,goal);send(c.res,200,plan);});
+  R('GET','/api/notification-preferences',(c)=>{if(!mustUser(c))return;db.prepare('INSERT OR IGNORE INTO notification_preferences(user_id) VALUES(?)').run(c.user.id);send(c.res,200,db.prepare('SELECT * FROM notification_preferences WHERE user_id=?').get(c.user.id));});
+  R('PUT','/api/notification-preferences',(c)=>{if(!mustUser(c))return;const b=c.body;for(const k of ['in_app','email','push','weekly_digest','reminders'])if(b[k]!==undefined&&![true,false,0,1].includes(b[k]))return err(c.res,400,'Notification flags must be boolean');const start=String(b.quiet_start||'21:00'),end=String(b.quiet_end||'08:00'),tz=String(b.timezone||'Africa/Nairobi');if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(end)||tz.length>80)return err(c.res,400,'Invalid quiet hours or timezone');const old=db.prepare('SELECT * FROM notification_preferences WHERE user_id=?').get(c.user.id)||{in_app:1,email:0,push:0,weekly_digest:1,reminders:1};db.prepare('INSERT INTO notification_preferences(user_id,in_app,email,push,weekly_digest,reminders,quiet_start,quiet_end,timezone) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET in_app=excluded.in_app,email=excluded.email,push=excluded.push,weekly_digest=excluded.weekly_digest,reminders=excluded.reminders,quiet_start=excluded.quiet_start,quiet_end=excluded.quiet_end,timezone=excluded.timezone,updated=CURRENT_TIMESTAMP').run(c.user.id,...['in_app','email','push','weekly_digest','reminders'].map(k=>b[k]===undefined?old[k]:Number(!!b[k])),b.quiet_start===undefined?old.quiet_start:start,b.quiet_end===undefined?old.quiet_end:end,b.timezone===undefined?old.timezone:tz);send(c.res,200,{ok:true});});
+  R('GET','/api/notifications',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare("SELECT id,kind,title,message,due_at,status,channel,created,sent_at FROM notification_queue WHERE user_id=? AND channel='in_app' ORDER BY created DESC LIMIT 100").all(c.user.id));});
+  R('POST','/api/admin/benefits',admin((c)=>{const b=c.body,title=String(b.title||'').trim(),desc=String(b.description||'').trim();if(title.length<3||title.length>160||desc.length<5||desc.length>1500)return err(c.res,400,'Benefit title and description required');const r=db.prepare('INSERT INTO learner_benefits(title,description,benefit_type,status,starts_at,ends_at,created_by) VALUES(?,?,?,\'active\',?,?,?)').run(title,desc,String(b.benefit_type||'resource').slice(0,40),b.starts_at||null,b.ends_at||null,c.user.id);send(c.res,201,{id:Number(r.lastInsertRowid)});}));
+  R('GET','/api/benefits',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare("SELECT b.id,b.title,b.description,b.benefit_type,b.starts_at,b.ends_at,(SELECT status FROM benefit_redemptions r WHERE r.benefit_id=b.id AND r.user_id=?) redemption_status FROM learner_benefits b WHERE b.status='active' AND (b.starts_at IS NULL OR b.starts_at<=CURRENT_TIMESTAMP) AND (b.ends_at IS NULL OR b.ends_at>=CURRENT_TIMESTAMP) ORDER BY b.created DESC").all(c.user.id));});
+  R('POST','/api/benefits/:id/claim',(c,id)=>{if(!mustUser(c))return;const b=db.prepare("SELECT id FROM learner_benefits WHERE id=? AND status='active' AND (starts_at IS NULL OR starts_at<=CURRENT_TIMESTAMP) AND (ends_at IS NULL OR ends_at>=CURRENT_TIMESTAMP)").get(Number(id));if(!b)return err(c.res,404,'Benefit unavailable');try{db.prepare('INSERT INTO benefit_redemptions(benefit_id,user_id) VALUES(?,?)').run(b.id,c.user.id);}catch{return err(c.res,409,'Benefit already claimed')};send(c.res,201,{ok:true,status:'claimed'});});
+  R('GET','/api/admin/retention-analytics',admin((c)=>{const days=Math.min(90,Math.max(7,Number(new URL(c.req.url,'http://x').searchParams.get('days')||28)));const active=db.prepare("SELECT COUNT(DISTINCT user_id) n FROM learning_events WHERE created>=datetime('now',?) AND event_type IN ('lesson_completed','quiz_attempted','project_submitted','challenge_submitted')").get('-'+days+' days').n;const weekly=db.prepare("SELECT date(created) day,COUNT(DISTINCT user_id) active_learners,COUNT(*) learning_actions FROM learning_events WHERE created>=datetime('now','-27 days') GROUP BY date(created) ORDER BY day").all();const referrals=db.prepare("SELECT COUNT(*) total,COUNT(CASE WHEN status='qualified' THEN 1 END) qualified,COUNT(CASE WHEN status='rejected' THEN 1 END) rejected FROM referral_attributions").get();const completion=db.prepare("SELECT c.id,c.title,COUNT(DISTINCT e.user_id) enrolled,COUNT(DISTINCT CASE WHEN (SELECT COUNT(*) FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=e.user_id AND l.course_id=c.id)=(SELECT COUNT(*) FROM lessons WHERE course_id=c.id) AND (SELECT COUNT(*) FROM lessons WHERE course_id=c.id)>0 THEN e.user_id END) completed FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id GROUP BY c.id ORDER BY c.title").all();const signups=db.prepare("SELECT COUNT(*) n FROM users WHERE created>=datetime('now',?)").get('-'+days+' days').n;const rewarded=db.prepare("SELECT COALESCE(SUM(amount_kes),0) n FROM reward_ledger WHERE status IN ('approved','redeemed')").get().n;send(c.res,200,{window_days:days,active_learners:active,new_signups:signups,referrals:{...referrals,conversion_percent:referrals.total?Math.round(referrals.qualified/referrals.total*100):0},approved_reward_value_kes:rewarded,weekly_activity:weekly,course_completion:completion,definitions:{active_learners:'Unique learners with qualifying learning events in the selected window; logins alone do not count.',referral_conversion:'Qualified referral attributions divided by all recorded referral attributions.'}});}));
+  R('GET','/api/referral',(c)=>{if(!mustUser(c))return;let row=db.prepare('SELECT code FROM referrals WHERE referrer_id=?').get(c.user.id);if(!row){const code='SF'+crypto.randomBytes(5).toString('hex').toUpperCase();db.prepare('INSERT INTO referrals(referrer_id,code) VALUES(?,?)').run(c.user.id,code);row={code};}const base=String(env.PUBLIC_URL||'').replace(/\/$/,'');const link=base?base+'/?ref='+encodeURIComponent(row.code):null;const stats=db.prepare("SELECT COUNT(*) total,COUNT(CASE WHEN status='qualified' THEN 1 END) qualified FROM referral_attributions WHERE referrer_id=?").get(c.user.id);const rewards=db.prepare('SELECT status,COALESCE(SUM(amount_kes),0) amount_kes FROM reward_ledger WHERE referrer_id=? GROUP BY status').all(c.user.id);send(c.res,200,{code:row.code,link,stats,rewards,share_message:`Join me on SkillForge Academy${link?' at '+link:''}. Referral rewards, if enabled, are subject to the published eligibility rules.`});});
+  R('GET','/api/admin/referrals',admin((c)=>send(c.res,200,db.prepare('SELECT a.*,r.code,u.name referrer_name,v.name referred_name,p.amount_kes payment_amount FROM referral_attributions a JOIN users u ON u.id=a.referrer_id JOIN users v ON v.id=a.referred_user_id LEFT JOIN payments p ON p.ref=a.qualifying_payment_ref LEFT JOIN referrals r ON r.code=a.referral_code ORDER BY a.created DESC').all())));
+  R('PUT','/api/admin/rewards/:id',(c,id)=>{if(!mustUser(c))return;if(c.user.role!=='admin')return err(c.res,403,'Admins only');const status=c.body.status,reason=String(c.body.reason||'').slice(0,500);if(!['approved','rejected','reversed'].includes(status))return err(c.res,400,'Invalid reward status');const reward=db.prepare('SELECT * FROM reward_ledger WHERE id=?').get(Number(id));if(!reward)return err(c.res,404,'Reward not found');if(reward.status!=='pending'&&status!=='reversed')return err(c.res,409,'Only pending rewards can be approved or rejected');db.prepare('UPDATE reward_ledger SET status=?,reason=?,updated=CURRENT_TIMESTAMP WHERE id=?').run(status,reason,Number(id));db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'referral.reward.'+status,String(id),reason);send(c.res,200,{ok:true,status});});
+
+
+  // Career + freelance marketplace. Listings are moderated before appearing publicly.
+  R('GET','/api/marketplace/gigs',(c)=>{const q=String(new URL(c.req.url,'http://x').searchParams.get('q')||'').slice(0,100);send(c.res,200,db.prepare("SELECT g.id,g.title,g.description,g.skills,g.budget_min_kes,g.budget_max_kes,g.deadline,g.created,u.name client_name,(SELECT COUNT(*) FROM freelance_proposals p WHERE p.gig_id=g.id) proposals FROM freelance_gigs g JOIN users u ON u.id=g.owner_id WHERE g.status='open' AND (?='' OR lower(g.title||' '||g.description||' '||g.skills) LIKE '%'||lower(?)||'%') ORDER BY g.created DESC LIMIT 100").all(q,q));});
+  R('POST','/api/marketplace/gigs',(c)=>{if(!mustUser(c))return;const b=c.body,title=String(b.title||'').trim(),description=String(b.description||'').trim(),skills=String(b.skills||'').slice(0,300),min=Number(b.budget_min_kes||0),max=Number(b.budget_max_kes||0);if(title.length<5||title.length>160||description.length<30||description.length>3000||!Number.isInteger(min)||!Number.isInteger(max)||min<0||max<min||max>100000000||(b.deadline&&!/^\d{4}-\d{2}-\d{2}$/.test(b.deadline)))return err(c.res,400,'Enter a clear 5–160 character title, description (30–3,000 characters), valid KSh budget and optional deadline');const r=db.prepare("INSERT INTO freelance_gigs(owner_id,title,description,skills,budget_min_kes,budget_max_kes,deadline,status) VALUES(?,?,?,?,?,?,?,'pending')").run(c.user.id,title,description,skills,min,max,b.deadline||null);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'freelance_gig.submit',String(r.lastInsertRowid),title);send(c.res,201,{id:Number(r.lastInsertRowid),status:'pending',message:'Listing submitted for moderation. It will appear publicly only after approval.'});});
+  R('POST','/api/marketplace/gigs/:id/proposals',(c,id)=>{if(!mustUser(c))return;const gig=db.prepare("SELECT id,owner_id FROM freelance_gigs WHERE id=? AND status='open'").get(Number(id));if(!gig)return err(c.res,404,'Gig is not open');if(gig.owner_id===c.user.id)return err(c.res,400,'You cannot apply to your own listing');const note=String(c.body.cover_note||'').trim(),budget=Number(c.body.proposed_budget_kes||0),days=Number(c.body.timeline_days||7);if(note.length<30||note.length>2000||!Number.isInteger(budget)||budget<0||budget>100000000||!Number.isInteger(days)||days<1||days>365)return err(c.res,400,'Add a 30–2,000 character proposal, valid budget and 1–365 day timeline');try{const r=db.prepare('INSERT INTO freelance_proposals(gig_id,freelancer_id,cover_note,proposed_budget_kes,timeline_days) VALUES(?,?,?,?,?)').run(gig.id,c.user.id,note,budget,days);trackEvent(c.user.id,'freelance_proposal','gig',gig.id);send(c.res,201,{id:Number(r.lastInsertRowid),status:'submitted'});}catch{return err(c.res,409,'You have already proposed for this gig');}});
+  R('GET','/api/marketplace/my-gigs',(c)=>{if(!mustUser(c))return;send(c.res,200,{owned:db.prepare('SELECT * FROM freelance_gigs WHERE owner_id=? ORDER BY created DESC').all(c.user.id),proposals:db.prepare('SELECT p.*,g.title gig_title,g.owner_id FROM freelance_proposals p JOIN freelance_gigs g ON g.id=p.gig_id WHERE p.freelancer_id=? OR g.owner_id=? ORDER BY p.created DESC').all(c.user.id,c.user.id)});});
+  R('PUT','/api/marketplace/proposals/:id',(c,id)=>{if(!mustUser(c))return;const status=c.body.status;if(!['shortlisted','accepted','declined','withdrawn'].includes(status))return err(c.res,400,'Invalid proposal status');const p=db.prepare('SELECT p.*,g.owner_id FROM freelance_proposals p JOIN freelance_gigs g ON g.id=p.gig_id WHERE p.id=?').get(Number(id));if(!p)return err(c.res,404,'Proposal not found');if(p.owner_id!==c.user.id&&p.freelancer_id!==c.user.id&&c.user.role!=='admin')return err(c.res,403,'Not allowed to update this proposal');if(p.freelancer_id===c.user.id&&!['withdrawn'].includes(status))return err(c.res,403,'Freelancers can only withdraw their own proposal');db.prepare('UPDATE freelance_proposals SET status=?,updated=CURRENT_TIMESTAMP WHERE id=?').run(status,p.id);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'freelance_proposal.'+status,String(p.id),'');send(c.res,200,{ok:true,status});});
+  R('POST','/api/employer/profile',(c)=>{if(!mustUser(c))return;const b=c.body,org=String(b.organization||'').trim(),website=String(b.website||''),description=String(b.description||'').trim();if(org.length<2||org.length>160||description.length<20||description.length>2000||(website&&!/^https:\/\//i.test(website)))return err(c.res,400,'Organization, 20–2,000 character description and optional HTTPS website required');db.prepare("INSERT INTO employer_profiles(user_id,organization,website,description,verification_status) VALUES(?,?,?,?, 'pending') ON CONFLICT(user_id) DO UPDATE SET organization=excluded.organization,website=excluded.website,description=excluded.description,verification_status='pending',reviewed_by=NULL,reviewed_at=NULL").run(c.user.id,org,website,description);send(c.res,201,{status:'pending',message:'Employer profile submitted. Posting access is enabled only after manual verification.'});});
+  R('GET','/api/employer/profile',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare('SELECT organization,website,description,verification_status,created FROM employer_profiles WHERE user_id=?').get(c.user.id)||null);});
+  R('POST','/api/employer/opportunities',(c)=>{if(!mustUser(c))return;const p=db.prepare("SELECT * FROM employer_profiles WHERE user_id=? AND verification_status='verified'").get(c.user.id);if(!p)return err(c.res,403,'A manually verified employer profile is required to publish opportunities');const b=c.body,title=String(b.title||'').trim(),description=String(b.description||'').trim(),url=String(b.apply_url||'');if(title.length<5||title.length>160||description.length<30||description.length>3000||(url&&!/^https:\/\//i.test(url)))return err(c.res,400,'Valid title, description and optional HTTPS application URL required');const r=db.prepare('INSERT INTO opportunities(title,organization,description,type,location,apply_url,status,created_by) VALUES(?,?,?,?,?,?,\'open\',?)').run(title,p.organization,description,String(b.type||'job').slice(0,40),String(b.location||'Remote').slice(0,100),url,c.user.id);db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'employer.opportunity.create',String(r.lastInsertRowid),title);send(c.res,201,{id:Number(r.lastInsertRowid)});});
+  R('POST','/api/opportunities/:id/apply',(c,id)=>{if(!mustUser(c))return;const o=db.prepare("SELECT id FROM opportunities WHERE id=? AND status='open'").get(Number(id));if(!o)return err(c.res,404,'Opportunity is no longer open');const note=String(c.body.cover_note||'').trim();if(note.length<20||note.length>2000)return err(c.res,400,'Add a 20–2,000 character application note');try{const r=db.prepare('INSERT INTO opportunity_applications(opportunity_id,user_id,cover_note) VALUES(?,?,?)').run(o.id,c.user.id,note);trackEvent(c.user.id,'opportunity_applied','opportunity',o.id);send(c.res,201,{id:Number(r.lastInsertRowid),status:'submitted'});}catch{return err(c.res,409,'You have already applied to this opportunity');}});
+  R('GET','/api/opportunities/my-applications',(c)=>{if(!mustUser(c))return;send(c.res,200,db.prepare('SELECT a.id,a.status,a.cover_note,a.created,o.title,o.organization,o.type,o.location FROM opportunity_applications a JOIN opportunities o ON o.id=a.opportunity_id WHERE a.user_id=? ORDER BY a.created DESC').all(c.user.id));});
+  R('POST','/api/instructor/apply',(c)=>{if(!mustUser(c))return;const b=c.body,expertise=String(b.expertise||'').trim(),experience=String(b.experience||'').trim(),url=String(b.sample_url||'');if(expertise.length<3||expertise.length>300||experience.length<30||experience.length>2000||(url&&!/^https:\/\//i.test(url)))return err(c.res,400,'Expertise, 30–2,000 character experience and optional HTTPS work sample required');const existing=db.prepare("SELECT id,status FROM instructor_applications WHERE user_id=? AND status='pending'").get(c.user.id);if(existing)return err(c.res,409,'You already have a pending instructor application');const r=db.prepare('INSERT INTO instructor_applications(user_id,expertise,experience,sample_url) VALUES(?,?,?,?)').run(c.user.id,expertise,experience,url);send(c.res,201,{id:Number(r.lastInsertRowid),status:'pending'});});
+  R('POST','/api/membership-requests',(c)=>{if(!mustUser(c))return;const code=String(c.body.plan_code||'');if(!['all_access_monthly','career_bundle','business_team'].includes(code))return err(c.res,400,'Select a valid membership plan');const notes=String(c.body.notes||'').slice(0,1000);try{const r=db.prepare("INSERT INTO membership_requests(user_id,plan_code,notes) VALUES(?,?,?)").run(c.user.id,code,notes);send(c.res,201,{id:Number(r.lastInsertRowid),status:'pending',message:'Request recorded. This is not a payment or active subscription; the academy must confirm pricing and configure a payment provider before activation.'});}catch{return err(c.res,409,'You already have a request for this plan and status');}});
+  R('GET','/api/membership-requests',(c)=>{if(!mustUser(c))return;send(c.res,200,c.user.role==='admin'?db.prepare('SELECT m.*,u.name,u.email FROM membership_requests m JOIN users u ON u.id=m.user_id ORDER BY m.created DESC').all():db.prepare('SELECT * FROM membership_requests WHERE user_id=? ORDER BY created DESC').all(c.user.id));});
+  R('PUT','/api/admin/membership-requests/:id',admin((c,id)=>{if(!mustUser(c))return;const status=String(c.body.status||'');if(!['contacted','activated','declined','cancelled'].includes(status))return err(c.res,400,'Invalid request status');const r=db.prepare('UPDATE membership_requests SET status=?,updated=CURRENT_TIMESTAMP WHERE id=?').run(status,Number(id));if(!r.changes)return err(c.res,404,'Membership request not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'membership_request.'+status,String(id),'Admin status change; not a payment event');send(c.res,200,{ok:true,status});}));
+  R('GET','/api/admin/marketplace/moderation',admin((c)=>send(c.res,200,{gigs:db.prepare("SELECT g.*,u.name owner_name,u.email owner_email FROM freelance_gigs g JOIN users u ON u.id=g.owner_id WHERE g.status='pending' ORDER BY g.created").all(),employers:db.prepare("SELECT e.*,u.name,u.email FROM employer_profiles e JOIN users u ON u.id=e.user_id WHERE e.verification_status='pending' ORDER BY e.created").all(),instructors:db.prepare("SELECT i.*,u.name,u.email FROM instructor_applications i JOIN users u ON u.id=i.user_id WHERE i.status='pending' ORDER BY i.created").all(),applications:db.prepare('SELECT a.*,u.name,u.email,o.title opportunity FROM opportunity_applications a JOIN users u ON u.id=a.user_id JOIN opportunities o ON o.id=a.opportunity_id ORDER BY a.created DESC LIMIT 200').all(),proposals:db.prepare('SELECT p.*,u.name,u.email,g.title gig FROM freelance_proposals p JOIN users u ON u.id=p.freelancer_id JOIN freelance_gigs g ON g.id=p.gig_id ORDER BY p.created DESC LIMIT 200').all()})));
+  R('PUT','/api/admin/marketplace/gigs/:id',admin((c,id)=>{const status=String(c.body.status||'');if(!['open','rejected','closed'].includes(status))return err(c.res,400,'Status must be open, rejected or closed');const r=db.prepare('UPDATE freelance_gigs SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?').run(status,c.user.id,Number(id));if(!r.changes)return err(c.res,404,'Gig not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'marketplace.gig.'+status,String(id),'');send(c.res,200,{ok:true,status});}));
+  R('PUT','/api/admin/employers/:userId',admin((c,userId)=>{const status=String(c.body.status||'');if(!['verified','rejected'].includes(status))return err(c.res,400,'Status must be verified or rejected');const r=db.prepare('UPDATE employer_profiles SET verification_status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE user_id=?').run(status,c.user.id,Number(userId));if(!r.changes)return err(c.res,404,'Employer profile not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'employer.'+status,String(userId),'');send(c.res,200,{ok:true,status});}));
+  R('PUT','/api/admin/instructors/:id',admin((c,id)=>{const status=String(c.body.status||''),note=String(c.body.admin_note||'').slice(0,1000);if(!['approved','rejected'].includes(status))return err(c.res,400,'Status must be approved or rejected');const r=db.prepare('UPDATE instructor_applications SET status=?,admin_note=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status=\'pending\'').run(status,note,c.user.id,Number(id));if(!r.changes)return err(c.res,404,'Pending instructor application not found');db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id,'instructor.'+status,String(id),note);send(c.res,200,{ok:true,status});}));
+
+
+
+  R('POST', '/api/account/password', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    if (limited('pw' + c.user.id, 5)) return err(c.res, 429, 'Too many attempts');
+    const cur = String(c.body.current_password || ''), nw = String(c.body.new_password || '');
+    if (nw.length < 10 || nw.length > 200) return err(c.res, 400, 'New password must be 10-200 characters');
+    if (nw === cur) return err(c.res, 400, 'Choose a different password from the current one');
+    const u = db.prepare('SELECT pass_hash FROM users WHERE id=?').get(c.user.id);
+    if (!verify(cur, u.pass_hash)) return err(c.res, 403, 'Current password is incorrect');
+    db.prepare('UPDATE users SET pass_hash=? WHERE id=?').run(hash(nw), c.user.id);
+    db.prepare('DELETE FROM sessions WHERE user_id=? AND token!=?').run(c.user.id, cookie(c.req, 'sid')); // sign out every other device
+    if (c.user.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, 'password.change', c.user.email, 'Other sessions revoked');
+    send(c.res, 200, { ok: true });
+  });
+
+  // ---- Account data export & soft-delete (learner data is kept until admin purges) ----
+  R('GET', '/api/account/export', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const uid = c.user.id;
+    const profile = db.prepare('SELECT id,email,name,role,created,updated_at FROM users WHERE id=?').get(uid);
+    const enrollments = db.prepare('SELECT e.course_id,c.title,e.created FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.user_id=?').all(uid);
+    const progress = db.prepare('SELECT p.lesson_id,l.title,p.done_at FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=?').all(uid);
+    const payments = db.prepare('SELECT ref,course_id,amount_kes,provider,status,created FROM payments WHERE user_id=?').all(uid);
+    const certificates = db.prepare('SELECT code,course_id,issued FROM certificates WHERE user_id=?').all(uid);
+    const quiz_attempts = db.prepare('SELECT lesson_id,score,total,created FROM quiz_attempts WHERE user_id=?').all(uid);
+    send(c.res, 200, {
+      exported_at: new Date().toISOString(),
+      profile, enrollments, progress, payments, certificates, quiz_attempts,
+      notice: 'This export is for your records. Closing your account does not erase learning history until an admin permanently purges it.'
+    });
+  });
+
+  R('POST', '/api/account/delete', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    if (limited('adel' + c.user.id, 3)) return err(c.res, 429, 'Too many attempts');
+    const password = String(c.body.password || '');
+    const u = db.prepare('SELECT id,email,pass_hash,role FROM users WHERE id=?').get(c.user.id);
+    if (!u || !verify(password, u.pass_hash)) return err(c.res, 403, 'Password is incorrect');
+    if (u.role === 'admin') {
+      const admins = db.prepare("SELECT COUNT(*) n FROM users WHERE role='admin' AND deleted_at IS NULL").get().n;
+      if (admins <= 1) return err(c.res, 400, 'Cannot close the last admin account. Promote another admin first.');
+    }
+    const reason = String(c.body.reason || '').slice(0, 300);
+    // Soft-delete: free the email for re-registration while retaining learning records under anonymized identity.
+    const tombstone = 'deleted+' + u.id + '+' + Date.now() + '@skillora.invalid';
+    db.prepare("UPDATE users SET email=?, name='Closed account', pass_hash=?, deleted_at=CURRENT_TIMESTAMP, deletion_reason=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(tombstone, hash(crypto.randomBytes(24).toString('hex')), reason, u.id);
+    db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id);
+    db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(u.id, 'account.soft_delete', String(u.id), reason || 'user requested');
+    // Clear cookie
+    c.res.setHeader('Set-Cookie', 'sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' + (env.COOKIE_SECURE === 'true' ? '; Secure' : ''));
+    send(c.res, 200, { ok: true, message: 'Your account has been closed. Learning records are retained for audit until an administrator permanently removes them.' });
+  });
+
+  // Paystack webhook — access granted only after verified event
+  R('POST', '/api/webhooks/paystack', (c) => {
+    const sig = c.req.headers['x-paystack-signature'] || '';
+    if (!paystack.verifyWebhookSignature(c.raw || '', sig)) return err(c.res, 401, 'Bad signature');
+    let event;
+    try { event = typeof c.body === 'object' ? c.body : JSON.parse(c.raw || '{}'); } catch { return err(c.res, 400, 'Bad JSON'); }
+    const eventId = String(event.id || event.data && event.data.id || '') + ':' + String(event.event || '');
+    if (!eventId || eventId === ':') return err(c.res, 400, 'Missing event id');
+    if (db.prepare('SELECT 1 x FROM webhook_events WHERE event_id=?').get(eventId)) return send(c.res, 200, { duplicate: true });
+    db.prepare('INSERT INTO webhook_events(event_id) VALUES(?)').run(eventId);
+    if (event.event === 'charge.success' && event.data) {
+      const ref = String(event.data.reference || '');
+      const p = db.prepare('SELECT * FROM payments WHERE ref=?').get(ref);
+      if (!p) return send(c.res, 200, { ignored: true });
+      const paidKes = Math.round(Number(event.data.amount || 0) / 100);
+      if (paidKes !== p.amount_kes) {
+        console.error('Paystack amount mismatch', ref, paidKes, p.amount_kes);
+        return send(c.res, 200, { mismatch: true });
+      }
+      settlePayment(p, ref, 'successful');
+    }
+    send(c.res, 200, { ok: true });
+  });
+
+  // Learner can re-check Paystack payment after redirect
+  R('POST', '/api/payments/paystack/verify', async (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const ref = String(c.body.ref || '');
+    const p = db.prepare('SELECT * FROM payments WHERE ref=? AND user_id=?').get(ref, c.user.id);
+    if (!p) return err(c.res, 404, 'Payment not found');
+    if (p.status === 'successful') return send(c.res, 200, { status: 'successful', enrolled: true });
+    if (!paystack.configured) return err(c.res, 503, 'Paystack not configured');
+    try {
+      const data = await paystack.verify(ref);
+      if (data.status === 'success' && Math.round(Number(data.amount) / 100) === p.amount_kes) {
+        settlePayment(p, ref, 'successful');
+        return send(c.res, 200, { status: 'successful', enrolled: true });
+      }
+      return send(c.res, 200, { status: data.status || p.status, enrolled: false });
+    } catch (e) {
+      return err(c.res, 502, e.message || 'Verify failed');
+    }
+  });
+
+  // ---- Control Center upgrades: announcements, user/role management, CSV exports, system health ----
+  const audit = (c, action, target, detail = '') => db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, action, String(target), String(detail).slice(0, 500));
+  R('GET', '/api/announcement', (c) => send(c.res, 200, db.prepare('SELECT id,message,level FROM announcements WHERE active=1 ORDER BY id DESC LIMIT 1').get() || null));
+  R('GET', '/api/admin/announcement', admin((c) => send(c.res, 200, db.prepare('SELECT id,message,level,active,created FROM announcements ORDER BY id DESC LIMIT 1').get() || null)));
+  R('PUT', '/api/admin/announcement', admin((c) => {
+    const message = String(c.body.message || '').trim().slice(0, 300), level = String(c.body.level || 'info'), active = c.body.active ? 1 : 0;
+    if (!['info', 'success', 'warning'].includes(level)) return err(c.res, 400, 'Level must be info, success or warning');
+    if (active && message.length < 3) return err(c.res, 400, 'Write a message of at least 3 characters');
+    db.prepare('UPDATE announcements SET active=0').run();
+    const r = db.prepare('INSERT INTO announcements(message,level,active,created_by) VALUES(?,?,?,?)').run(message, level, active, c.user.id);
+    audit(c, active ? 'announcement.publish' : 'announcement.hide', Number(r.lastInsertRowid), message); send(c.res, 200, { ok: true });
+  }));
+  R('GET', '/api/admin/users', admin((c) => send(c.res, 200, db.prepare("SELECT u.id,u.email,u.name,u.role,u.created,(SELECT COUNT(*) FROM progress WHERE user_id=u.id) lessons_done,(SELECT COUNT(*) FROM enrollments WHERE user_id=u.id) courses FROM users u ORDER BY (u.role='admin') DESC,u.id DESC LIMIT 500").all())));
+  R('PUT', '/api/admin/users/:id/role', admin((c, id) => {
+    const role = String(c.body.role || ''), uid = Number(id);
+    if (!['student', 'admin'].includes(role)) return err(c.res, 400, 'Role must be student or admin');
+    const u = db.prepare('SELECT id,email,role FROM users WHERE id=?').get(uid); if (!u) return err(c.res, 404, 'User not found');
+    if (u.id === c.user.id && role !== 'admin') return err(c.res, 400, 'You cannot remove your own admin access');
+    if (u.role === 'admin' && role !== 'admin' && db.prepare("SELECT COUNT(*) n FROM users WHERE role='admin'").get().n <= 1) return err(c.res, 400, 'At least one admin must remain');
+    db.prepare('UPDATE users SET role=? WHERE id=?').run(role, uid); audit(c, 'user.role', u.email, `${u.role} -> ${role}`); send(c.res, 200, { ok: true });
+  }));
+  const csvCell = (v) => { let t = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; };
+  const exports_ = {
+    students: "SELECT u.id,u.name,u.email,u.role,u.created,(SELECT COUNT(*) FROM enrollments WHERE user_id=u.id) courses,(SELECT COUNT(*) FROM progress WHERE user_id=u.id) lessons_done FROM users u ORDER BY u.id",
+    payments: "SELECT p.id,p.ref,u.email,p.course_id,p.amount_kes,p.provider,p.status,p.created FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id",
+    enrolments: "SELECT e.created,u.name,u.email,c.title course FROM enrollments e JOIN users u ON u.id=e.user_id JOIN courses c ON c.id=e.course_id ORDER BY e.created",
+    certificates: "SELECT ce.code,ce.issued,u.name,u.email,c.title course FROM certificates ce JOIN users u ON u.id=ce.user_id JOIN courses c ON c.id=ce.course_id ORDER BY ce.issued",
+    audit: "SELECT a.id,a.created,COALESCE(u.email,'System') actor,a.action,a.target,a.detail FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 5000"
+  };
+  R('GET', '/api/admin/export/:kind', admin((c, kind) => {
+    const q = exports_[kind]; if (!q) return err(c.res, 404, 'Unknown export');
+    const rows = db.prepare(q).all(), cols = rows.length ? Object.keys(rows[0]) : [];
+    const csv = [cols.join(',')].concat(rows.map(r => cols.map(k => csvCell(r[k])).join(','))).join('\r\n');
+    audit(c, 'export.' + kind, kind, rows.length + ' rows');
+    c.res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="skillora-${kind}-${new Date().toISOString().slice(0, 10)}.csv"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' }); c.res.end('\ufeff' + csv);
+  }));
+  R('GET', '/api/admin/health', admin((c) => {
+    const n = (q) => db.prepare(q).get().n, pageCount = db.prepare('PRAGMA page_count').get().page_count, pageSize = db.prepare('PRAGMA page_size').get().page_size;
+    send(c.res, 200, {
+      server_time: new Date().toISOString(), uptime_minutes: Math.round(process.uptime() / 60), node: process.version,
+      database_ok: db.prepare('SELECT 1 x').get().x === 1, database_mb: Math.round(pageCount * pageSize / 1048576 * 10) / 10, in_memory: dbFile === ':memory:',
+      checks: [
+        { label: 'Payment webhook secret configured', ok: !!env.PAYMENT_WEBHOOK_SECRET, fix: 'Set PAYMENT_WEBHOOK_SECRET before accepting real payments.' },
+        { label: 'Secure cookies (HTTPS)', ok: env.COOKIE_SECURE === 'true', fix: 'Set COOKIE_SECURE=true when the site is served over HTTPS.' },
+        { label: 'M-Pesa STK Push configured', ok: mpesa.configured, fix: 'Set MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, MPESA_CALLBACK_SECRET and an https PUBLIC_URL.' },
+        { label: 'Paystack configured', ok: paystack.configured, fix: 'Set PAYSTACK_SECRET_KEY and an https PUBLIC_URL. Point Paystack webhook to /api/webhooks/paystack.' },
+        { label: 'SMS reminders configured', ok: features.smsConfigured(), fix: 'Optional: set AT_USERNAME and AT_API_KEY (Africa\u2019s Talking).' },
+        { label: 'Public URL set (referral links)', ok: !!env.PUBLIC_URL, fix: 'Set PUBLIC_URL to your site address.' },
+        { label: 'AI tutor key configured', ok: !!env.OPENAI_API_KEY, fix: 'Optional: set OPENAI_API_KEY to enable AI answers; otherwise guided steps are used.' },
+        { label: 'Default demo owner account removed', ok: !db.prepare("SELECT 1 x FROM users WHERE email='owner@skillora.local'").get(), fix: 'Sign in as your real owner, then change role/password of owner@skillora.local (or set OWNER_EMAIL).' },
+        { label: 'Database is persistent', ok: dbFile !== ':memory:', fix: 'Point DB_FILE at a persistent disk.' }
+      ],
+      attention: { pending_assignments: n("SELECT COUNT(*) n FROM assignments WHERE status='submitted'"), open_tickets: n("SELECT COUNT(*) n FROM support_tickets WHERE status!='resolved'"), pending_gigs: n("SELECT COUNT(*) n FROM freelance_gigs WHERE status='pending'"), pending_employers: n("SELECT COUNT(*) n FROM employer_profiles WHERE verification_status='pending'"), pending_instructors: n("SELECT COUNT(*) n FROM instructor_applications WHERE status='pending'"), pending_scholarships: n("SELECT COUNT(*) n FROM scholarship_applications WHERE status='pending'"), open_reports: n("SELECT COUNT(*) n FROM abuse_reports WHERE status='open'"), pending_memberships: n("SELECT COUNT(*) n FROM membership_requests WHERE status='pending'") },
+      signups_7d: n("SELECT COUNT(*) n FROM users WHERE created>=datetime('now','-7 days')"), signups_30d: n("SELECT COUNT(*) n FROM users WHERE created>=datetime('now','-30 days')")
+    });
+  }));
+
+  const features = registerFeatures({ R, db, send, err, mustUser, admin, audit, env, limited, dbFile });
+  const server = http.createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, 'http://x');
+      if (req.method === 'GET' && url.pathname.startsWith('/verify/')) { const v = features.verifyPage(decodeURIComponent(url.pathname.slice(8))); res.writeHead(v.status, { 'Content-Type': 'text/html; charset=utf-8', ...secHeaders, 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" }); return res.end(v.html); }
+      if (!url.pathname.startsWith('/api') && url.pathname !== '/health' && req.method === 'GET') {
+        const f = path.join(pub, (url.pathname === '/' || url.pathname === '/admin' || url.pathname === '/control-center') ? 'index.html' : path.normalize(url.pathname));
+        if (!f.startsWith(pub + path.sep) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end('Not found'); }
+        res.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' }[path.extname(f)] || 'text/plain', ...secHeaders, ...(url.pathname === '/sandbox.html' ? { 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; frame-ancestors 'self'" } : { 'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'self'" }) });
+        return fs.createReadStream(f).pipe(res);
+      }
+      const raw = req.method === 'GET' ? '' : await readBody(req);
+      const isHook = url.pathname === '/api/webhooks/payment' || url.pathname.startsWith('/api/webhooks/mpesa/');
+      if (req.method !== 'GET' && !isHook && !(req.headers['content-type'] || '').includes('application/json')) return err(res, 415, 'JSON required');
+      let body = {}; try { body = raw ? JSON.parse(raw) : {}; } catch { return err(res, 400, 'Invalid JSON'); }
+      for (const [m, re, fn] of routes) { const mt = re.exec(url.pathname); if (m === req.method && mt) return fn({ req, res, body, raw, user: userOf(req), ip: req.socket.remoteAddress }, ...mt.slice(1)); }
+      err(res, 404, 'Not found');
+    } catch (e) { console.error('error:', e.message); err(res, 500, 'Internal error'); }
+  });
+  return { server, db, runReminders: features.runReminders };
+}
+module.exports = { createApp };
+if (require.main === module) {
+  const port = Number(process.env.PORT) || 3000;
+  createApp().server.listen(port, '0.0.0.0', () => console.log('Skillora Academy on port ' + port));
+}
