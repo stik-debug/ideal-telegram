@@ -26,14 +26,15 @@ function setView(html){
   // Dashboard, Careers, Freelance, lessons and error states.
   const quickNav = `<nav class="view-quick-nav" aria-label="Main navigation"><button type="button" class="nav-btn" data-global-nav="home">Home</button><button type="button" class="nav-btn" data-global-nav="courses">Courses</button><button type="button" class="nav-btn" data-global-nav="how">How it works</button><button type="button" class="nav-btn" data-global-nav="faq">FAQs</button><button type="button" class="nav-btn" data-global-nav="plans">Plans</button></nav>`;
   app.innerHTML = quickNav + html;
-  app.querySelectorAll('[data-global-nav]').forEach(button => button.addEventListener('click', () => {
+  app.querySelectorAll('[data-global-nav]').forEach(button => button.addEventListener('click', (e) => {
+    e.preventDefault();
     const destination = button.dataset.globalNav;
     if (destination === 'plans') { membershipPage(); return; }
-    const hashes = {home:'', courses:'programs', how:'how-it-works', faq:'faq'};
-    const hash = hashes[destination];
-    // Rebuild the original landing page; SPA views replace its sections.
+    if (destination === 'dashboard' && typeof dash === 'function') { dash(); return; }
+    const hashes = { home: '', courses: 'programs', how: 'how-it-works', faq: 'faq' };
+    const hash = hashes[destination] || '';
     const url = '/' + (hash ? '#' + hash : '');
-    if (location.pathname === '/' && location.hash === (hash ? '#' + hash : '') && app.innerHTML === homeMarkup) { window.scrollTo({top:0,behavior:'smooth'}); return; }
+    // Always hard-navigate so the full marketing page and listeners are restored
     location.assign(url);
   }));
   window.scrollTo({top:0,behavior:'smooth'});
@@ -102,10 +103,10 @@ async function course(slug){
   try{
     const c=await api('/courses/'+encodeURIComponent(slug));
     const lessons=c.lessons||[];
-    setView(`<section class="view-shell"><button class="back-link" id="course-back">← All courses</button><div class="view-head"><p class="eyebrow dark">SKILLORA COURSE</p><h1>${esc(c.title)}</h1><p>${esc(c.summary)}</p></div><div class="course-detail-grid"><div><h2 style="font-size:19px">Your learning plan</h2><p style="color:var(--muted);font-size:12px;margin-bottom:17px">Preview free lessons, test your understanding and build momentum one step at a time.</p><div class="lesson-list">${lessons.length?lessons.map(l=>`<article class="lesson-row"><div><h3>${l.done?'✓ ':''}${esc(l.pos+'. '+l.title)}</h3><p>${l.is_free?'Free preview':l.locked?'Included with enrolment':'Available to you'}</p></div>${l.locked?'<span aria-label="Locked">🔒 Enrol to unlock</span>':`<button class="course-open" data-lesson="${l.id}">Open lesson</button>`}</article>`).join(''):'<div class="empty-state">Lessons for this course are still being prepared. Check back soon.</div>'}</div></div><aside class="panel price-panel"><p class="eyebrow dark">COURSE ACCESS</p><div class="big-price">KSh ${Number(c.price_kes).toLocaleString('en-KE')}</div><p>One-time listed course price. Confirm checkout availability before paying.</p>${c.enrolled?`<div class="result-panel">You are enrolled. Keep going!</div>${lessons.length && lessons.every(x=>x.done)?'<button class="btn-solid" style="width:100%;margin-top:12px" id="issue-certificate">Get certificate PDF</button>':'<p style="margin-top:12px">Complete every lesson to unlock your certificate.</p>'}`:`
+    setView(`<section class="view-shell"><button class="back-link" id="course-back">← All courses</button><div class="view-head"><p class="eyebrow dark">SKILLORA COURSE</p><h1>${esc(c.title)}</h1><p>${esc(c.summary)}</p></div><div class="course-detail-grid"><div><h2 style="font-size:19px">Your learning plan</h2><p style="color:var(--muted);font-size:12px;margin-bottom:17px">Preview free lessons, test your understanding and build momentum one step at a time.</p><div class="lesson-list">${lessons.length?lessons.map(l=>`<article class="lesson-row"><div><h3>${l.done?'✓ ':''}${esc(l.pos+'. '+l.title)}</h3><p>${l.is_free?'Free preview':l.locked?'Included with enrolment':'Available to you'}</p></div>${l.locked?'<span aria-label="Locked">🔒 Enrol to unlock</span>':`<button class="course-open" data-lesson="${l.id}">Open lesson</button>`}</article>`).join(''):'<div class="empty-state">Lessons for this course are still being prepared. Check back soon.</div>'}</div></div><aside class="panel price-panel"><p class="eyebrow dark">COURSE ACCESS</p><div class="big-price">KSh ${Number(c.price_kes).toLocaleString('en-KE')}</div><p>One-time listed course price. Confirm checkout availability before paying.</p>${c.enrolled?`<div class="result-panel">You are enrolled. Keep learning!</div>${lessons.length && lessons.every(x=>x.done)?'<button class="btn-solid" style="width:100%;margin-top:12px" id="issue-certificate">Download certificate (PDF)</button>':'<p style="margin-top:12px">Finish every lesson to download your certificate signed by Stive Willman.</p>'}`:c.admin_preview?`<div class="notice"><b>Admin preview</b> — you can open lessons to review content. Learners only unlock after paying KSh ${Number(c.price_kes).toLocaleString('en-KE')}.</div><div class="checkout-box" style="margin-top:12px"><p class="checkout-label">Test learner checkout</p><button type="button" class="btn-solid" style="width:100%;margin-bottom:8px" id="pay-paystack">Pay with card (Paystack)</button><button type="button" class="btn-outline checkout-mpesa-toggle" style="width:100%" id="pay-mpesa-toggle">Pay with M-Pesa</button><form id="mpesa-form" class="mpesa-form" hidden><label>Safaricom number<input id="mpesa-phone" type="tel" placeholder="0712 345 678" required></label><button type="submit" class="btn-solid" style="width:100%" id="pay-mpesa">Send M-Pesa prompt</button></form><div id="payment-message" role="status"></div></div>`:`
 <div class="checkout-box" id="checkout-box">
   ${Number(c.price_kes)<1?`<button class="btn-solid" style="width:100%" id="buy-course" ${!lessons.length?'disabled':''}>Enrol free</button>`:`
-  <p class="checkout-label">Choose payment method</p>
+  <p class="checkout-label">Pay to unlock full course</p>
   <div class="checkout-methods" id="checkout-methods">
     <button type="button" class="btn-solid" style="width:100%;margin-bottom:10px" id="pay-paystack" ${!lessons.length?'disabled':''}>Pay with card (Paystack)</button>
     <button type="button" class="btn-outline checkout-mpesa-toggle" style="width:100%" id="pay-mpesa-toggle" ${!lessons.length?'disabled':''}>Pay with M-Pesa</button>
@@ -116,9 +117,9 @@ async function course(slug){
   </form>`}
   <div id="payment-message" role="status"></div>
 </div>
-<p style="margin-top:12px">A free lesson is available when included in this course.</p>`}<div class="notice">Safety tip: only use the official checkout. Skillora will never ask you to share your M-Pesa PIN or card CVV by chat.</div></aside></div></section>`);
-    if($('#course-back'))$('#course-back').onclick=()=>homeScroll();
-    app.querySelectorAll('[data-lesson]').forEach(b=>b.onclick=()=>lesson(c,lessons.find(l=>String(l.id)===b.dataset.lesson)));
+<p style="margin-top:12px">Only marked free preview lessons are open before payment.</p>`}<div class="notice">Safety tip: only use the official checkout. Skillora will never ask you to share your M-Pesa PIN or card CVV by chat.</div></aside></div></section>`);
+    if($('#course-back'))$('#course-back').onclick=()=>{ try{ location.assign('/#programs'); }catch{ homeScroll(); } };
+    app.querySelectorAll('[data-lesson]').forEach(b=>b.onclick=()=>{const l=lessons.find(x=>String(x.id)===b.dataset.lesson);if(!l)return;if(l.locked){const el=$('#payment-message');if(el)el.innerHTML='<div class="notice">This lesson unlocks after you enrol (pay the course fee).</div>';return;}lesson(c,l);});
     const payMsg=(html)=>{const el=$('#payment-message');if(el)el.innerHTML=html;};
     const runCheckout=async(provider,extra={})=>{
       if(!me)return auth();

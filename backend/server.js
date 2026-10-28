@@ -24,46 +24,66 @@ function createApp(env = process.env) {
   const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...secHeaders, ...headers }); res.end(JSON.stringify(obj)); };
   const err = (res, code, msg) => send(res, code, { error: msg });
   const certificatePdf = (student, course, code, issued, verifyUrl) => {
-    // A dependency-free, one-page PDF certificate with a verifiable unique code.
-    const safe = (v) => String(v || '').normalize('NFKD').replace(/[^\x20-\x7E]/g, '').replace(/([\\()])/g, '\\$1').slice(0, 110);
+    const safe = (v) => String(v || '').normalize('NFKD').replace(/[^\x20-\x7E]/g, '').replace(/([\\()])/g, '\\$1').slice(0, 100);
+    const studentN = safe(student);
+    const courseN = safe(course);
+    const codeN = safe(code);
+    const dateN = safe(String(issued || '').slice(0, 10));
+    const stuX = Math.max(80, 421 - studentN.length * 7.2);
+    const courseX = Math.max(70, 421 - courseN.length * 5.2);
+    let qrLines = [];
+    try {
+      if (verifyUrl && qr && typeof qr.pdfOps === 'function') qrLines = qr.pdfOps(verifyUrl, 700, 52, 72);
+    } catch (_) {}
     const lines = [
-      'q', '0.05 0.25 0.20 rg', '0 0 842 595 re f',
-      'Q', 'q', '0.98 0.98 0.95 rg', '18 18 806 559 re f', 'Q',
-      'q', '0.05 0.25 0.20 RG', '3 w', '32 32 778 531 re S', 'Q',
-      'q', '0.78 0.58 0.20 RG', '1.2 w', '43 43 756 509 re S', 'Q',
-      'BT /F1 15 Tf 0.05 0.25 0.20 rg 1 0 0 1 0 0 Tm 1 0 0 1 315 520 Tm (SKILLFORGE ACADEMY) Tj ET',
-      'BT /F1 11 Tf 0.35 0.43 0.38 rg 1 0 0 1 334 493 Tm (CERTIFICATE OF COMPLETION) Tj ET',
-      'BT /F2 34 Tf 0.05 0.25 0.20 rg 1 0 0 1 251 435 Tm (Certificate) Tj ET',
-      'BT /F2 30 Tf 0.05 0.25 0.20 rg 1 0 0 1 300 394 Tm (of Completion) Tj ET',
-      'BT /F1 13 Tf 0.30 0.37 0.33 rg 1 0 0 1 304 350 Tm (This is proudly presented to) Tj ET',
-      `BT /F2 26 Tf 0.05 0.25 0.20 rg 1 0 0 1 ${Math.max(90, 421-safe(student).length*7)} 309 Tm (${safe(student)}) Tj ET`,
-      'q 0.78 0.58 0.20 RG 1.5 w 130 294 m 712 294 l S Q',
-      'BT /F1 13 Tf 0.30 0.37 0.33 rg 1 0 0 1 300 260 Tm (for successfully completing the course) Tj ET',
-      `BT /F2 20 Tf 0.05 0.25 0.20 rg 1 0 0 1 ${Math.max(75, 421-safe(course).length*5.5)} 225 Tm (${safe(course)}) Tj ET`,
-      'BT /F1 11 Tf 0.30 0.37 0.33 rg 1 0 0 1 260 188 Tm (Awarded by Skillora Academy) Tj ET',
-      `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 135 130 Tm (Issued: ${safe(issued).slice(0,10)}) Tj ET`,
-      `BT /F1 10 Tf 0.30 0.37 0.33 rg 1 0 0 1 495 130 Tm (Certificate ID: ${safe(code)}) Tj ET`,
-      'BT /F1 9 Tf 0.30 0.37 0.33 rg 1 0 0 1 190 83 Tm (Independent course completion record; not an accredited qualification.) Tj ET',
-      ...(verifyUrl ? [...qr.pdfOps(verifyUrl, 712, 58, 78), 'BT /F1 7 Tf 0.30 0.37 0.33 rg 1 0 0 1 727 49 Tm (Scan to verify) Tj ET'] : []),
-      'BT /F1 8 Tf 0.30 0.37 0.33 rg 1 0 0 1 230 65 Tm (Verify this code using the official Skillora Academy verification page.) Tj ET'
-    ].join('\n');
-    const stream = Buffer.from(lines, 'latin1');
+      'q', '0.04 0.20 0.17 rg', '0 0 842 595 re f', 'Q',
+      'q', '0.99 0.98 0.95 rg', '28 28 786 539 re f', 'Q',
+      'q', '0.78 0.62 0.22 RG', '2.5 w', '38 38 766 519 re S', 'Q',
+      'q', '0.05 0.28 0.22 RG', '1.2 w', '48 48 746 499 re S', 'Q',
+      'q', '0.78 0.62 0.22 RG', '2 w',
+      '58 547 m 58 527 l 78 527 l S',
+      '784 547 m 784 527 l 764 527 l S',
+      '58 48 m 58 68 l 78 68 l S',
+      '784 48 m 784 68 l 764 68 l S', 'Q',
+      'BT /F1 11 Tf 0.45 0.38 0.18 rg 1 0 0 1 292 520 Tm (SKILLORA ACADEMY) Tj ET',
+      'BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 268 504 Tm (CERTIFICATE OF COMPLETION) Tj ET',
+      'BT /F2 36 Tf 0.04 0.20 0.17 rg 1 0 0 1 248 448 Tm (Certificate) Tj ET',
+      'BT /F2 28 Tf 0.04 0.20 0.17 rg 1 0 0 1 292 412 Tm (of Completion) Tj ET',
+      'BT /F1 12 Tf 0.32 0.38 0.34 rg 1 0 0 1 318 368 Tm (This certifies that) Tj ET',
+      'BT /F2 26 Tf 0.04 0.20 0.17 rg 1 0 0 1 ' + stuX + ' 328 Tm (' + studentN + ') Tj ET',
+      'q', '0.78 0.62 0.22 RG', '1.4 w', '160 318 m 682 318 l S', 'Q',
+      'BT /F1 12 Tf 0.32 0.38 0.34 rg 1 0 0 1 248 288 Tm (has successfully completed the course) Tj ET',
+      'BT /F2 18 Tf 0.04 0.20 0.17 rg 1 0 0 1 ' + courseX + ' 252 Tm (' + courseN + ') Tj ET',
+      'BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 120 198 Tm (Issued: ' + dateN + ') Tj ET',
+      'BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 420 198 Tm (Certificate ID: ' + codeN + ') Tj ET',
+      'q', '0.78 0.62 0.22 RG', '1 w', '120 110 m 300 110 l S', 'Q',
+      'BT /F2 14 Tf 0.04 0.20 0.17 rg 1 0 0 1 140 118 Tm (Stive Willman) Tj ET',
+      'BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 138 96 Tm (Director, Skillora Academy) Tj ET',
+      'BT /F1 8 Tf 0.40 0.45 0.42 rg 1 0 0 1 120 78 Tm (Authorized signature) Tj ET',
+      'BT /F1 8 Tf 0.35 0.42 0.38 rg 1 0 0 1 360 88 Tm (Official completion record) Tj ET',
+      'BT /F1 7 Tf 0.40 0.45 0.42 rg 1 0 0 1 320 74 Tm (Not an accredited professional qualification.) Tj ET'
+    ].concat(qrLines).concat(qrLines.length ? ['BT /F1 7 Tf 0.35 0.42 0.38 rg 1 0 0 1 708 44 Tm (Scan to verify) Tj ET'] : []);
+    const stream = Buffer.from(lines.join('\n'), 'latin1');
     const objs = [
       '<< /Type /Catalog /Pages 2 0 R >>',
       '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
       '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
       '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
       '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
-      `<< /Length ${stream.length} >>\nstream\n${stream.toString('latin1')}\nendstream`
+      '<< /Length ' + stream.length + ' >>\nstream\n' + stream.toString('latin1') + '\nendstream'
     ];
     let pdf = '%PDF-1.4\n%SFCA\n', offsets = [0];
-    for (let i=0;i<objs.length;i++){offsets.push(Buffer.byteLength(pdf,'latin1'));pdf += `${i+1} 0 obj\n${objs[i]}\nendobj\n`;}
-    const xref = Buffer.byteLength(pdf,'latin1'); pdf += `xref\n0 ${objs.length+1}\n0000000000 65535 f \n`;
-    for(let i=1;i<offsets.length;i++) pdf += `${String(offsets[i]).padStart(10,'0')} 00000 n \n`;
-    pdf += `trailer\n<< /Size ${objs.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-    return Buffer.from(pdf,'latin1');
+    for (let i = 0; i < objs.length; i++) {
+      offsets.push(Buffer.byteLength(pdf, 'latin1'));
+      pdf += (i + 1) + ' 0 obj\n' + objs[i] + '\nendobj\n';
+    }
+    const xref = Buffer.byteLength(pdf, 'latin1');
+    pdf += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n';
+    for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+    pdf += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF';
+    return Buffer.from(pdf, 'latin1');
   };
-  const readBody = (req) => new Promise((ok, no) => { let b = ''; req.on('data', d => { b += d; if (b.length > 1e6) { req.destroy(); no(new Error('too large')); } }); req.on('end', () => ok(b)); });
+    const readBody = (req) => new Promise((ok, no) => { let b = ''; req.on('data', d => { b += d; if (b.length > 1e6) { req.destroy(); no(new Error('too large')); } }); req.on('end', () => ok(b)); });
   const cookie = (req, n) => ((req.headers.cookie || '').split(/;\s*/).find(c => c.startsWith(n + '=')) || '').slice(n.length + 1);
   const userOf = (req) => { const t = cookie(req, 'sid'); if (!t) return null; return db.prepare('SELECT u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.exp>? AND u.deleted_at IS NULL').get(t, Date.now()) || null; };
   const canRead = (u, courseId) => u && (u.role === 'admin' || db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(u.id, courseId));
@@ -108,13 +128,15 @@ function createApp(env = process.env) {
   R('GET', '/api/courses/:slug', (c, slug) => {
     const co = db.prepare('SELECT * FROM courses WHERE slug=? AND published=1').get(slug);
     if (!co) return err(c.res, 404, 'Course not found');
-    const full = canRead(c.user, co.id);
+    const reallyEnrolled = !!(c.user && db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id));
+    const adminPreview = !!(c.user && c.user.role === 'admin' && !reallyEnrolled);
+    const full = reallyEnrolled || adminPreview;
     const done = c.user ? new Set(db.prepare('SELECT lesson_id FROM progress WHERE user_id=?').all(c.user.id).map(r => r.lesson_id)) : new Set();
     const lessons = db.prepare('SELECT id,pos,title,body,is_free FROM lessons WHERE course_id=? ORDER BY pos').all(co.id).map(l => {
       const open = full || l.is_free; const qs = open ? db.prepare('SELECT id,question,options FROM quizzes WHERE lesson_id=?').all(l.id).map(q => ({ ...q, options: JSON.parse(q.options) })) : [];
       return { id: l.id, pos: l.pos, title: l.title, is_free: !!l.is_free, locked: !open, done: done.has(l.id), body: open ? l.body : null, quiz: qs };
     });
-    send(c.res, 200, { id: co.id, slug, title: co.title, summary: co.summary, price_kes: co.price_kes, enrolled: !!full, lessons });
+    send(c.res, 200, { id: co.id, slug, title: co.title, summary: co.summary, price_kes: co.price_kes, enrolled: reallyEnrolled, admin_preview: adminPreview, lessons });
   });
   const lessonAccess = (c, id) => {
     const l = db.prepare('SELECT * FROM lessons WHERE id=?').get(id);
