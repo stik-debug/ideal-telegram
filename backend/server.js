@@ -56,10 +56,48 @@ function createApp(env = process.env) {
       'BT /F2 18 Tf 0.04 0.20 0.17 rg 1 0 0 1 ' + courseX + ' 252 Tm (' + courseN + ') Tj ET',
       'BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 120 198 Tm (Issued: ' + dateN + ') Tj ET',
       'BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 420 198 Tm (Certificate ID: ' + codeN + ') Tj ET',
-      'q', '0.78 0.62 0.22 RG', '1 w', '120 110 m 300 110 l S', 'Q',
-      'BT /F2 14 Tf 0.04 0.20 0.17 rg 1 0 0 1 140 118 Tm (Stive Willman) Tj ET',
-      'BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 138 96 Tm (Director, Skillora Academy) Tj ET',
-      'BT /F1 8 Tf 0.40 0.45 0.42 rg 1 0 0 1 120 78 Tm (Authorized signature) Tj ET',
+      // Professional ink signature (vector stroke) + formal signatory
+      // Calligraphic pen signature for Stive Willman
+      'q', '0.08 0.12 0.14 RG', '2.1 w', '1 J', '1 j',
+      // Leading flourish into capital S
+      '108 128 m',
+      '118 148 125 155 135 145 c',
+      '145 135 140 118 130 122 c',
+      '122 125 125 140 140 142 c',
+      '155 144 165 135 170 125 c',
+      // t / i
+      '175 130 180 145 188 140 c',
+      '192 128 190 118 198 122 c',
+      // v e
+      '205 135 215 148 225 138 c',
+      '232 128 228 118 240 125 c',
+      '250 135 255 140 262 130 c',
+      // space + W
+      '270 118 275 150 285 148 c',
+      '295 146 298 125 305 130 c',
+      '312 140 318 150 328 140 c',
+      // i l l
+      '335 125 338 150 345 145 c',
+      '350 130 348 118 355 125 c',
+      '360 140 365 148 372 138 c',
+      // m a n flourish
+      '380 125 385 150 395 145 c',
+      '405 140 410 125 418 132 c',
+      '428 145 438 155 450 140 c',
+      '458 128 455 115 465 122 c',
+      'S', 'Q',
+      // underline flourish
+      'q', '0.08 0.12 0.14 RG', '1.15 w',
+      '115 112 m 130 108 200 106 280 110 c 340 113 400 108 455 105 c S',
+      'Q',
+      // small terminal stroke
+      'q', '0.08 0.12 0.14 RG', '1.4 w',
+      '430 148 m 445 160 458 135 468 142 c S',
+      'Q',
+      'q', '0.78 0.62 0.22 RG', '0.85 w', '110 98 m 360 98 l S', 'Q',
+      'BT /F2 12 Tf 0.04 0.20 0.17 rg 1 0 0 1 115 82 Tm (Stive Willman) Tj ET',
+      'BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 115 68 Tm (Director, Skillora Academy) Tj ET',
+      'BT /F1 8 Tf 0.40 0.45 0.42 rg 1 0 0 1 115 54 Tm (Authorized signature) Tj ET',
       'BT /F1 8 Tf 0.35 0.42 0.38 rg 1 0 0 1 360 88 Tm (Official completion record) Tj ET',
       'BT /F1 7 Tf 0.40 0.45 0.42 rg 1 0 0 1 320 74 Tm (Not an accredited professional qualification.) Tj ET'
     ].concat(qrLines).concat(qrLines.length ? ['BT /F1 7 Tf 0.35 0.42 0.38 rg 1 0 0 1 708 44 Tm (Scan to verify) Tj ET'] : []);
