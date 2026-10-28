@@ -708,4 +708,7 @@ R('GET', '/api/admin/payments', admin((c) => send(c.res, 200, db.prepare('SELECT
   return { server, db, runReminders: features.runReminders };
 }
 module.exports = { createApp };
-if (require.main === module) createApp().server.listen(process.env.PORT || 3000, () => console.log('Skillora Academy on port ' + (process.env.PORT || 3000)));
+if (require.main === module) {
+  const port = Number(process.env.PORT) || 3000;
+  createApp().server.listen(port, '0.0.0.0', () => console.log('Skillora Academy on port ' + port));
+}

@@ -1,0 +1,27 @@
+# Optional: Render Blueprint. You can also configure the service manually in the dashboard.
+services:
+  - type: web
+    name: skillora
+    runtime: node
+    plan: free
+    buildCommand: "echo 'No build step — pure Node app'"
+    startCommand: "npm start"
+    envVars:
+      - key: NODE_VERSION
+        value: "22.14.0"
+      - key: DB_FILE
+        value: "./data/skillora.db"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: PUBLIC_URL
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: OWNER_NAME
+        value: "Academy Owner"
