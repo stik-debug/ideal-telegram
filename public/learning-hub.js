@@ -134,12 +134,34 @@
     shell('settings', `<div class="cc-grid">
       <article class="cc-card"><h3>SMS study reminders</h3>${!rem.sms_available ? '<p class="muted">SMS reminders are not switched on for this academy yet.</p>' : rem.verified && rem.sms_opt_in ? `<p>Reminders go to <b>${esc(rem.phone)}</b> at ${esc(rem.reminder_time)}.</p><button class="course-open" id="sms-stop">${T('Stop reminders')}</button>` : `<p class="muted">We text you once a day only if you have not studied. Verify your number to turn it on.</p><form id="sms-form"><label>Safaricom / Airtel number<input name="phone" type="tel" placeholder="0712345678" autocomplete="tel" required></label><button class="btn-solid" type="submit">${T('Send code')}</button></form><form id="sms-verify" hidden><label>6-digit code<input name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required></label><button class="btn-solid" type="submit">${T('Verify')}</button></form>`}<p id="sms-msg" class="cc-toast" role="status"></p></article>
       <article class="cc-card"><h3>Offline library</h3><p class="muted">Save a course on this device to read its lessons without internet. Remove it any time; it is cleared when you sign out.</p>${courses.length ? courses.map(c => `<p><b>${esc(c.title)}</b><br>${idx.includes(c.slug) ? `<button class="course-open" data-rm="${esc(c.slug)}">${T('Remove offline copy')}</button>` : `<button class="course-open" data-sv="${esc(c.slug)}">${T('Save for offline')}</button>`}</p>`).join('') : '<p class="muted">Enrol in a course to save it for offline study.</p>'}<p id="off-msg" class="cc-toast" role="status"></p></article>
-      <article class="cc-card"><h3>${T('Data saver')}</h3><p class="muted">Turns off decorative animation and effects to use less data and battery.</p><label class="cc-check"><input type="checkbox" id="ds-toggle" ${saveData() ? 'checked' : ''}> ${T('Data saver')}</label></article></div>`); bindTabs();
+      <article class="cc-card"><h3>${T('Data saver')}</h3><p class="muted">Turns off decorative animation and effects to use less data and battery.</p><label class="cc-check"><input type="checkbox" id="ds-toggle" ${saveData() ? 'checked' : ''}> ${T('Data saver')}</label></article>
+      <article class="cc-card"><h3>Your data</h3><p class="muted">Download a copy of your learning records, or close your account. Closing keeps history for audit until an admin permanently removes it.</p>
+      <div class="cc-btns"><button type="button" class="course-open" id="export-data">Download my data</button>
+      <button type="button" class="nav-btn" id="close-account">Close my account</button></div>
+      <p id="account-msg" class="muted" role="status"></p></article></div>`); bindTabs();
     if (el('#sms-form')) { el('#sms-form').onsubmit = async e => { e.preventDefault(); try { await api('/reminders/phone', 'POST', { phone: new FormData(e.target).get('phone') }); el('#sms-verify').hidden = false; msg('#sms-msg', 'Code sent. Enter it below.'); } catch (x) { msg('#sms-msg', x.message, true); } }; el('#sms-verify').onsubmit = async e => { e.preventDefault(); try { await api('/reminders/verify', 'POST', { code: new FormData(e.target).get('code') }); settings(); } catch (x) { msg('#sms-msg', x.message, true); } }; }
     if (el('#sms-stop')) el('#sms-stop').onclick = async () => { await api('/reminders/stop', 'POST'); settings(); };
     document.querySelectorAll('[data-sv]').forEach(b => b.onclick = async () => { b.disabled = true; try { await saveCourseOffline(b.dataset.sv); settings(); } catch (e) { msg('#off-msg', e.message, true); b.disabled = false; } });
     document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { removeCourseOffline(b.dataset.rm); settings(); });
     el('#ds-toggle').onchange = e => { LS.set('skillora.datasaver', e.target.checked ? '1' : '0'); applyDataSaver(); };
+    if (el('#export-data')) el('#export-data').onclick = async () => {
+      try {
+        const data = await api('/account/export');
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'skillora-my-data.json'; a.click();
+        el('#account-msg').textContent = 'Download started.';
+      } catch (e) { el('#account-msg').textContent = e.message; }
+    };
+    if (el('#close-account')) el('#close-account').onclick = async () => {
+      const password = prompt('Enter your password to close this account:');
+      if (!password) return;
+      if (!confirm('Close your account? You will be signed out. Learning records stay until an admin purges them.')) return;
+      try {
+        await api('/account/delete', 'POST', { password, reason: 'user request' });
+        el('#account-msg').textContent = 'Account closed.';
+        location.href = '/';
+      } catch (e) { el('#account-msg').textContent = e.message; }
+    };
   }
 
   // ================= M-Pesa checkout (replaces the placeholder buy handler) =================

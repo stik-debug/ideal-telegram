@@ -48,7 +48,8 @@
   const SECTIONS = [
     ['Payment oversight', 'cc-payments', 'Payments'], ['Course completion health', 'cc-health', 'Completion'], ['Recent audit activity', 'cc-audit', 'Audit log'],
     ['Course management', 'cc-courses', 'Courses'], ['Students & enrolments', 'cc-students', 'Students'], ['Assignment reviews', 'cc-assignments', 'Assignments'],
-    ['Support tickets', 'cc-support', 'Support'], ['Certificates issued', 'cc-certs', 'Certificates']
+    ['Support tickets', 'cc-support', 'Support'], ['Certificates issued', 'cc-certs', 'Certificates'],
+    ['Closed accounts', 'cc-deleted', 'Closed accounts'], ['Database & payments', 'cc-dbpay', 'Database']
   ];
 
   async function enhance() {
@@ -141,3 +142,70 @@
   document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.key.toLowerCase() === 'a' && typeof me !== 'undefined' && me && me.role === 'admin') { e.preventDefault(); window.adminDash(); } });
   showAnnouncement();
 })();
+
+
+  // Extra Control Center panels: closed accounts + database backup + payment providers
+  const _enhance = typeof enhance === 'function' ? enhance : null;
+  async function enhanceDbAndAccounts() {
+    const shell = q('.view-shell') || q('main');
+    if (!shell || q('#cc-deleted')) return;
+    let deleted = [], providers = null;
+    try { deleted = await api('/admin/deleted-users'); } catch { deleted = []; }
+    try { providers = await api('/admin/payment-providers'); } catch { providers = null; }
+
+    const delHtml = `<section class="cc-section" id="cc-deleted"><h2>Closed accounts</h2>
+      <p class="muted">Learners can close their account from settings. Records stay until you permanently purge them. Restoring requires a new email.</p>
+      ${deleted.length ? `<div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>ID</th><th>Closed</th><th>Reason</th><th>Actions</th></tr></thead><tbody>
+      ${deleted.map(u => `<tr data-uid="${u.id}"><td>${u.id}</td><td>${esc(u.deleted_at || '')}</td><td>${esc(u.deletion_reason || '—')}</td>
+      <td><button type="button" class="nav-btn" data-restore="${u.id}">Restore</button>
+      <button type="button" class="nav-btn" data-purge="${u.id}">Purge</button></td></tr>`).join('')}
+      </tbody></table></div>` : '<p>No closed accounts.</p>'}
+    </section>`;
+
+    const payHtml = `<section class="cc-section" id="cc-dbpay"><h2>Database & payment providers</h2>
+      <div class="cc-tiles">
+        <div class="cc-tile"><b>${providers && providers.mpesa && providers.mpesa.configured ? 'Ready' : 'Off'}</b><span>M-Pesa STK</span></div>
+        <div class="cc-tile"><b>${providers && providers.paystack && providers.paystack.configured ? 'Ready' : 'Off'}</b><span>Paystack</span></div>
+      </div>
+      <p class="muted">Set <code>DB_FILE</code> on a persistent volume so learner data survives redeploys. Use backup before upgrades.</p>
+      <div class="cc-btns">
+        <button type="button" class="course-open" id="cc-backup-btn">Run database backup</button>
+      </div>
+      <p id="cc-backup-msg" class="muted" role="status"></p>
+    </section>`;
+
+    shell.insertAdjacentHTML('beforeend', delHtml + payHtml);
+
+    q('#cc-backup-btn') && (q('#cc-backup-btn').onclick = async () => {
+      const msg = q('#cc-backup-msg');
+      try {
+        const r = await api('/admin/backup', 'POST', {});
+        msg.textContent = r.message + (r.path ? ' Path: ' + r.path : '');
+        toast('Backup completed.');
+      } catch (e) { msg.textContent = e.message; toast(e.message, true); }
+    });
+
+    shell.querySelectorAll('[data-restore]').forEach(btn => btn.onclick = async () => {
+      const email = prompt('Email address to restore this account to:');
+      if (!email) return;
+      try {
+        await api('/admin/users/' + btn.dataset.restore + '/restore', 'POST', { email });
+        toast('Account restored.');
+        window.adminDash();
+      } catch (e) { toast(e.message, true); }
+    });
+    shell.querySelectorAll('[data-purge]').forEach(btn => btn.onclick = async () => {
+      if (!confirm('Permanently delete this user and their learning records? This cannot be undone.')) return;
+      try {
+        await api('/admin/users/' + btn.dataset.purge + '/purge', 'DELETE', {});
+        toast('User purged.');
+        window.adminDash();
+      } catch (e) { toast(e.message, true); }
+    });
+  }
+
+  const prevAdmin = window.adminDash;
+  window.adminDash = async function () {
+    await prevAdmin.apply(this, arguments);
+    try { await enhanceDbAndAccounts(); } catch (e) { console.error(e); }
+  };

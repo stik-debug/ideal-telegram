@@ -1,6 +1,6 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
-const { open } = require('./db'); const { hash, verify } = require('./auth');
-const qr = require('./qr'), mpesaLib = require('./mpesa'), registerFeatures = require('./features');
+const { open, backup } = require('./db'); const { hash, verify } = require('./auth');
+const qr = require('./qr'), mpesaLib = require('./mpesa'), paystackLib = require('./paystack'), registerFeatures = require('./features');
 
 function createApp(env = process.env) {
   const dbFile = env.DB_FILE || './data/skillforge.db';
@@ -65,7 +65,7 @@ function createApp(env = process.env) {
   };
   const readBody = (req) => new Promise((ok, no) => { let b = ''; req.on('data', d => { b += d; if (b.length > 1e6) { req.destroy(); no(new Error('too large')); } }); req.on('end', () => ok(b)); });
   const cookie = (req, n) => ((req.headers.cookie || '').split(/;\s*/).find(c => c.startsWith(n + '=')) || '').slice(n.length + 1);
-  const userOf = (req) => { const t = cookie(req, 'sid'); if (!t) return null; return db.prepare('SELECT u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.exp>?').get(t, Date.now()) || null; };
+  const userOf = (req) => { const t = cookie(req, 'sid'); if (!t) return null; return db.prepare('SELECT u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.exp>? AND u.deleted_at IS NULL').get(t, Date.now()) || null; };
   const canRead = (u, courseId) => u && (u.role === 'admin' || db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(u.id, courseId));
   const newSession = (res, uid, body) => { const t = crypto.randomBytes(32).toString('hex'); db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(t, uid, Date.now() + 7 * 864e5);
     send(res, 200, body, { 'Set-Cookie': `sid=${t}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${env.COOKIE_SECURE === 'true' ? '; Secure' : ''}` }); };
@@ -92,6 +92,7 @@ function createApp(env = process.env) {
     const em = String(c.body.email || '').toLowerCase().slice(0, 200), f = failures.get(em);
     if (f && f.n >= 5 && Date.now() - f.t < 15 * 60000) return err(c.res, 429, 'Too many failed attempts for this account. Try again in 15 minutes.');
     const u = db.prepare('SELECT * FROM users WHERE email=?').get(em);
+    if (u && u.deleted_at) return err(c.res, 403, 'This account was closed. Contact support if you need help recovering learning records.');
     if (!u || !verify(String(c.body.password || ''), u.pass_hash)) {
       failures.set(em, { n: (f && Date.now() - f.t < 15 * 60000 ? f.n : 0) + 1, t: Date.now() });
       if (u && u.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(u.id, 'login.failed', em, 'Wrong password for an admin account');
@@ -167,31 +168,55 @@ function createApp(env = process.env) {
   };
   // Payments: pending record is created server-side; access is granted ONLY by a signed webhook.
   const mpesa = mpesaLib.create(env);
+  const paystack = paystackLib.create(env);
   R('POST', '/api/checkout', async (c) => {
     if (!c.user) return err(c.res, 401, 'Sign in required');
     const co = db.prepare('SELECT * FROM courses WHERE id=? AND published=1').get(Number(c.body.courseId)); if (!co) return err(c.res, 404, 'Course not found');
-    const provider = c.body.provider === 'card' ? 'card' : 'mpesa';
+    const want = String(c.body.provider || 'mpesa').toLowerCase();
+    const provider = want === 'paystack' || want === 'card' ? 'paystack' : 'mpesa';
     const ref = 'SF' + crypto.randomBytes(8).toString('hex').toUpperCase();
+    if (db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id)) return err(c.res, 409, 'You are already enrolled in this course.');
+    if (co.price_kes < 1) return err(c.res, 400, 'This course has no price set.');
+    if (limited('co' + c.user.id, 5)) return err(c.res, 429, 'Too many payment attempts. Please wait a minute.');
+
     if (provider === 'mpesa' && mpesa.configured) {
       try {
-        if (limited('co' + c.user.id, 5)) return err(c.res, 429, 'Too many payment attempts. Please wait a minute.');
-        if (db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id)) return err(c.res, 409, 'You are already enrolled in this course.');
         const phone = mpesa.normalizePhone(c.body.phone); if (!phone) return err(c.res, 400, 'Enter a valid Safaricom number such as 0712345678.');
-        if (co.price_kes < 1) return err(c.res, 400, 'This course has no price set.');
         db.prepare("UPDATE payments SET status='cancelled' WHERE user_id=? AND course_id=? AND provider='mpesa' AND status='pending' AND created<datetime('now','-10 minutes')").run(c.user.id, co.id);
         if (db.prepare("SELECT 1 x FROM payments WHERE user_id=? AND course_id=? AND provider='mpesa' AND status='pending'").get(c.user.id, co.id)) return err(c.res, 409, 'A payment request is already waiting on your phone. Complete it or wait a few minutes.');
         db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, 'mpesa');
         try {
           const r = await mpesa.stkPush({ phone, amount: co.price_kes, ref, desc: 'Skillora' });
           db.prepare('INSERT INTO payment_mpesa(ref,checkout_request_id,merchant_request_id,phone_last4) VALUES(?,?,?,?)').run(ref, r.checkoutRequestId, r.merchantRequestId || '', phone.slice(-4));
-          return send(c.res, 202, { ref, status: 'pending', live_payments_enabled: true, message: r.customerMessage });
+          return send(c.res, 202, { ref, status: 'pending', provider: 'mpesa', live_payments_enabled: true, message: r.customerMessage });
         } catch (e) { db.prepare("UPDATE payments SET status='failed' WHERE ref=?").run(ref); console.error('M-Pesa STK error:', e.message); return err(c.res, 502, 'We could not send the M-Pesa request. Check the number and try again.'); }
       } catch (e) { console.error('checkout error:', e.message); return err(c.res, 500, 'Could not start checkout. Please try again.'); }
     }
+
+    if (provider === 'paystack' && paystack.configured) {
+      try {
+        db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, 'paystack');
+        const callback = String(env.PUBLIC_URL || '').replace(/\/$/, '') + '/?payment=paystack&ref=' + encodeURIComponent(ref);
+        const r = await paystack.initialize({
+          email: c.user.email,
+          amountKes: co.price_kes,
+          ref,
+          callbackUrl: callback,
+          metadata: { user_id: c.user.id, course_id: co.id, course_slug: co.slug },
+        });
+        db.prepare('INSERT INTO payment_paystack(ref,access_code,authorization_url,paystack_ref) VALUES(?,?,?,?)').run(ref, r.accessCode || '', r.authorizationUrl || '', r.reference || ref);
+        return send(c.res, 202, { ref, status: 'pending', provider: 'paystack', live_payments_enabled: true, authorization_url: r.authorizationUrl, message: 'Continue to Paystack to complete payment.' });
+      } catch (e) {
+        db.prepare("UPDATE payments SET status='failed' WHERE ref=?").run(ref);
+        console.error('Paystack error:', e.message);
+        return err(c.res, 502, 'Could not start card payment. Please try again or use M-Pesa.');
+      }
+    }
+
+    // Fallback: record pending payment but do not grant access until a real provider confirms.
     db.prepare('INSERT INTO payments(ref,user_id,course_id,amount_kes,provider) VALUES(?,?,?,?,?)').run(ref, c.user.id, co.id, co.price_kes, provider);
-    const live = !!(env.PAYMENT_PROVIDER && env.PAYMENT_API_KEY);
-    // TODO(provider): when live, call the gateway here (server-side) with `ref` and amount, return its checkout/STK info.
-    send(c.res, live ? 202 : 503, { ref, status: 'pending', live_payments_enabled: live, message: live ? 'Awaiting provider confirmation' : 'Live payments are not enabled yet. No access has been granted.' });
+    const live = mpesa.configured || paystack.configured || !!(env.PAYMENT_PROVIDER && env.PAYMENT_API_KEY);
+    send(c.res, live ? 202 : 503, { ref, status: 'pending', provider, live_payments_enabled: live, message: live ? 'Awaiting provider confirmation' : 'Live payments are not enabled yet. Set MPESA_* or PAYSTACK_SECRET_KEY. No access has been granted.' });
   });
   R('POST', '/api/webhooks/mpesa/:secret', (c, secret) => {
     if (!env.MPESA_CALLBACK_SECRET || secret.length !== String(env.MPESA_CALLBACK_SECRET).length || !crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(String(env.MPESA_CALLBACK_SECRET)))) return err(c.res, 401, 'Unauthorized');
@@ -233,7 +258,51 @@ function createApp(env = process.env) {
     send(c.res, 200, { ok: true });
   });
   const admin = (fn) => (c, ...a) => { if (!c.user) return err(c.res, 401, 'Sign in required'); if (c.user.role !== 'admin') return err(c.res, 403, 'Admins only'); return fn(c, ...a); };
-  R('GET', '/api/admin/payments', admin((c) => send(c.res, 200, db.prepare('SELECT p.*,u.email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC').all())));
+  
+  R('GET', '/api/admin/deleted-users', admin((c) => send(c.res, 200, db.prepare("SELECT id,email,name,role,created,deleted_at,deletion_reason FROM users WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 200").all())));
+  R('POST', '/api/admin/users/:id/restore', admin((c, id) => {
+    const u = db.prepare('SELECT * FROM users WHERE id=?').get(Number(id));
+    if (!u || !u.deleted_at) return err(c.res, 404, 'Deleted user not found');
+    // Require a fresh email to restore (tombstone emails are not usable)
+    const email = String(c.body.email || '').toLowerCase().trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err(c.res, 400, 'Provide a valid email to restore this account');
+    try {
+      db.prepare("UPDATE users SET email=?, name=COALESCE(NULLIF(?, ''), name), deleted_at=NULL, deletion_reason='', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(email, String(c.body.name || '').slice(0, 80), u.id);
+    } catch { return err(c.res, 409, 'That email is already in use'); }
+    audit(c, 'account.restore', id, email);
+    send(c.res, 200, { ok: true });
+  }));
+  R('DELETE', '/api/admin/users/:id/purge', admin((c, id) => {
+    const u = db.prepare('SELECT * FROM users WHERE id=?').get(Number(id));
+    if (!u) return err(c.res, 404, 'User not found');
+    if (u.role === 'admin') return err(c.res, 400, 'Refuse to purge admin accounts from this tool');
+    if (Number(id) === c.user.id) return err(c.res, 400, 'Cannot purge yourself');
+    // Hard delete learning rows then user (order matters for FKs without ON DELETE CASCADE on all tables)
+    const uid = u.id;
+    const tables = ['sessions','enrollments','progress','quiz_attempts','payments','certificates','assignments','review_cards','exercise_completions','cohort_members','learner_outcomes','user_contacts','reminder_log','ai_usage'];
+    for (const t of tables) {
+      try { db.prepare(`DELETE FROM ${t} WHERE user_id=?`).run(uid); } catch (_) {}
+    }
+    try { db.prepare('DELETE FROM users WHERE id=?').run(uid); } catch (e) { return err(c.res, 500, 'Purge failed: ' + e.message); }
+    audit(c, 'account.purge', id, u.email);
+    send(c.res, 200, { ok: true });
+  }));
+  R('POST', '/api/admin/backup', admin((c) => {
+    try {
+      const dest = backup(db, dbFile, require('path').join(require('path').dirname(dbFile), 'backups'));
+      audit(c, 'db.backup', dest, '');
+      send(c.res, 200, { ok: true, path: dest, message: 'Backup written on the server. Copy it off-site regularly.' });
+    } catch (e) {
+      err(c.res, 500, e.message || 'Backup failed');
+    }
+  }));
+  R('GET', '/api/admin/payment-providers', admin((c) => send(c.res, 200, {
+    mpesa: { configured: mpesa.configured, env: env.MPESA_ENV || 'sandbox' },
+    paystack: { configured: paystack.configured, public_key_set: !!env.PAYSTACK_PUBLIC_KEY },
+    generic: { configured: !!(env.PAYMENT_PROVIDER && env.PAYMENT_API_KEY) },
+  })));
+
+R('GET', '/api/admin/payments', admin((c) => send(c.res, 200, db.prepare('SELECT p.*,u.email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC').all())));
   R('GET', '/api/admin/students', admin((c) => send(c.res, 200, db.prepare("SELECT u.id,u.email,u.name,(SELECT COUNT(*) FROM progress WHERE user_id=u.id) lessons_done FROM users u WHERE role='student'").all())));
   R('GET', '/api/admin/courses', admin((c) => send(c.res, 200, db.prepare('SELECT id,slug,title,summary,price_kes,published,content_status,(SELECT COUNT(*) FROM lessons WHERE course_id=courses.id) lessons FROM courses ORDER BY title').all())));
   R('PUT', '/api/admin/courses/:id', admin((c, id) => {
@@ -477,6 +546,89 @@ function createApp(env = process.env) {
     if (c.user.role === 'admin') db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, 'password.change', c.user.email, 'Other sessions revoked');
     send(c.res, 200, { ok: true });
   });
+
+  // ---- Account data export & soft-delete (learner data is kept until admin purges) ----
+  R('GET', '/api/account/export', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const uid = c.user.id;
+    const profile = db.prepare('SELECT id,email,name,role,created,updated_at FROM users WHERE id=?').get(uid);
+    const enrollments = db.prepare('SELECT e.course_id,c.title,e.created FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.user_id=?').all(uid);
+    const progress = db.prepare('SELECT p.lesson_id,l.title,p.done_at FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=?').all(uid);
+    const payments = db.prepare('SELECT ref,course_id,amount_kes,provider,status,created FROM payments WHERE user_id=?').all(uid);
+    const certificates = db.prepare('SELECT code,course_id,issued FROM certificates WHERE user_id=?').all(uid);
+    const quiz_attempts = db.prepare('SELECT lesson_id,score,total,created FROM quiz_attempts WHERE user_id=?').all(uid);
+    send(c.res, 200, {
+      exported_at: new Date().toISOString(),
+      profile, enrollments, progress, payments, certificates, quiz_attempts,
+      notice: 'This export is for your records. Closing your account does not erase learning history until an admin permanently purges it.'
+    });
+  });
+
+  R('POST', '/api/account/delete', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    if (limited('adel' + c.user.id, 3)) return err(c.res, 429, 'Too many attempts');
+    const password = String(c.body.password || '');
+    const u = db.prepare('SELECT id,email,pass_hash,role FROM users WHERE id=?').get(c.user.id);
+    if (!u || !verify(password, u.pass_hash)) return err(c.res, 403, 'Password is incorrect');
+    if (u.role === 'admin') {
+      const admins = db.prepare("SELECT COUNT(*) n FROM users WHERE role='admin' AND deleted_at IS NULL").get().n;
+      if (admins <= 1) return err(c.res, 400, 'Cannot close the last admin account. Promote another admin first.');
+    }
+    const reason = String(c.body.reason || '').slice(0, 300);
+    // Soft-delete: free the email for re-registration while retaining learning records under anonymized identity.
+    const tombstone = 'deleted+' + u.id + '+' + Date.now() + '@skillora.invalid';
+    db.prepare("UPDATE users SET email=?, name='Closed account', pass_hash=?, deleted_at=CURRENT_TIMESTAMP, deletion_reason=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(tombstone, hash(crypto.randomBytes(24).toString('hex')), reason, u.id);
+    db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id);
+    db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(u.id, 'account.soft_delete', String(u.id), reason || 'user requested');
+    // Clear cookie
+    c.res.setHeader('Set-Cookie', 'sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' + (env.COOKIE_SECURE === 'true' ? '; Secure' : ''));
+    send(c.res, 200, { ok: true, message: 'Your account has been closed. Learning records are retained for audit until an administrator permanently removes them.' });
+  });
+
+  // Paystack webhook — access granted only after verified event
+  R('POST', '/api/webhooks/paystack', (c) => {
+    const sig = c.req.headers['x-paystack-signature'] || '';
+    if (!paystack.verifyWebhookSignature(c.raw || '', sig)) return err(c.res, 401, 'Bad signature');
+    let event;
+    try { event = typeof c.body === 'object' ? c.body : JSON.parse(c.raw || '{}'); } catch { return err(c.res, 400, 'Bad JSON'); }
+    const eventId = String(event.id || event.data && event.data.id || '') + ':' + String(event.event || '');
+    if (!eventId || eventId === ':') return err(c.res, 400, 'Missing event id');
+    if (db.prepare('SELECT 1 x FROM webhook_events WHERE event_id=?').get(eventId)) return send(c.res, 200, { duplicate: true });
+    db.prepare('INSERT INTO webhook_events(event_id) VALUES(?)').run(eventId);
+    if (event.event === 'charge.success' && event.data) {
+      const ref = String(event.data.reference || '');
+      const p = db.prepare('SELECT * FROM payments WHERE ref=?').get(ref);
+      if (!p) return send(c.res, 200, { ignored: true });
+      const paidKes = Math.round(Number(event.data.amount || 0) / 100);
+      if (paidKes !== p.amount_kes) {
+        console.error('Paystack amount mismatch', ref, paidKes, p.amount_kes);
+        return send(c.res, 200, { mismatch: true });
+      }
+      settlePayment(p, ref, 'successful');
+    }
+    send(c.res, 200, { ok: true });
+  });
+
+  // Learner can re-check Paystack payment after redirect
+  R('POST', '/api/payments/paystack/verify', async (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const ref = String(c.body.ref || '');
+    const p = db.prepare('SELECT * FROM payments WHERE ref=? AND user_id=?').get(ref, c.user.id);
+    if (!p) return err(c.res, 404, 'Payment not found');
+    if (p.status === 'successful') return send(c.res, 200, { status: 'successful', enrolled: true });
+    if (!paystack.configured) return err(c.res, 503, 'Paystack not configured');
+    try {
+      const data = await paystack.verify(ref);
+      if (data.status === 'success' && Math.round(Number(data.amount) / 100) === p.amount_kes) {
+        settlePayment(p, ref, 'successful');
+        return send(c.res, 200, { status: 'successful', enrolled: true });
+      }
+      return send(c.res, 200, { status: data.status || p.status, enrolled: false });
+    } catch (e) {
+      return err(c.res, 502, e.message || 'Verify failed');
+    }
+  });
+
   // ---- Control Center upgrades: announcements, user/role management, CSV exports, system health ----
   const audit = (c, action, target, detail = '') => db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, action, String(target), String(detail).slice(0, 500));
   R('GET', '/api/announcement', (c) => send(c.res, 200, db.prepare('SELECT id,message,level FROM announcements WHERE active=1 ORDER BY id DESC LIMIT 1').get() || null));
@@ -522,6 +674,7 @@ function createApp(env = process.env) {
         { label: 'Payment webhook secret configured', ok: !!env.PAYMENT_WEBHOOK_SECRET, fix: 'Set PAYMENT_WEBHOOK_SECRET before accepting real payments.' },
         { label: 'Secure cookies (HTTPS)', ok: env.COOKIE_SECURE === 'true', fix: 'Set COOKIE_SECURE=true when the site is served over HTTPS.' },
         { label: 'M-Pesa STK Push configured', ok: mpesa.configured, fix: 'Set MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, MPESA_CALLBACK_SECRET and an https PUBLIC_URL.' },
+        { label: 'Paystack configured', ok: paystack.configured, fix: 'Set PAYSTACK_SECRET_KEY and an https PUBLIC_URL. Point Paystack webhook to /api/webhooks/paystack.' },
         { label: 'SMS reminders configured', ok: features.smsConfigured(), fix: 'Optional: set AT_USERNAME and AT_API_KEY (Africa\u2019s Talking).' },
         { label: 'Public URL set (referral links)', ok: !!env.PUBLIC_URL, fix: 'Set PUBLIC_URL to your site address.' },
         { label: 'AI tutor key configured', ok: !!env.OPENAI_API_KEY, fix: 'Optional: set OPENAI_API_KEY to enable AI answers; otherwise guided steps are used.' },

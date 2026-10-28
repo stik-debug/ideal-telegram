@@ -285,3 +285,156 @@ function home(){window.scrollTo({top:0,behavior:'smooth'});renderCourses()}
 })();
 
 init();
+
+
+/* ===== Command palette (Ctrl/Cmd+K), course skeletons, certificate share ===== */
+(function skilloraCommandPalette(){
+  function openPalette(){
+    if (document.getElementById('cmd-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'cmd-overlay';
+    overlay.className = 'cmd-overlay';
+    overlay.innerHTML = `<div class="cmd-panel" role="dialog" aria-label="Command palette"><input id="cmd-input" type="search" placeholder="Search courses, go to Learning Hub, Control Center…" autocomplete="off" /><div class="cmd-list" id="cmd-list"></div><div class="cmd-hint">↑↓ navigate · Enter open · Esc close · Ctrl/Cmd+K</div></div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#cmd-input');
+    const list = overlay.querySelector('#cmd-list');
+    let items = [];
+    let active = 0;
+
+    const staticActions = [
+      { label: 'Home', run: () => { location.href = '/'; } },
+      { label: 'Browse programs', run: () => { const el = document.getElementById('programs'); if (el) el.scrollIntoView({ behavior: 'smooth' }); else location.href = '/#programs'; } },
+      { label: 'My learning', run: () => { const b = document.getElementById('nav-dashboard'); if (b) b.click(); else if (typeof auth === 'function') auth(); } },
+      { label: 'Learning Hub', run: () => { const b = document.getElementById('nav-hub'); if (b) b.click(); } },
+      { label: 'Careers board', run: () => { const b = document.getElementById('nav-careers'); if (b) b.click(); } },
+      { label: 'Freelance marketplace', run: () => { const b = document.getElementById('nav-marketplace'); if (b) b.click(); } },
+      { label: 'Membership plans', run: () => { const b = document.getElementById('nav-membership'); if (b) b.click(); } },
+      { label: 'Control Center (admin)', run: () => { const b = document.getElementById('nav-admin'); if (b) b.click(); else location.href = '/admin'; } },
+      { label: 'Toggle dark / light theme', run: () => { const t = document.getElementById('theme-toggle'); if (t) t.click(); } },
+      { label: 'Sign in / account', run: () => { const b = document.getElementById('nav-in') || document.getElementById('nav-join'); if (b) b.click(); else if (typeof auth === 'function') auth(); } },
+    ];
+
+    async function loadCourses(){
+      try {
+        const rows = await fetch('/api/courses', { credentials: 'same-origin' }).then(r => r.json());
+        return (rows || []).map(co => ({
+          label: 'Course: ' + co.title,
+          run: () => { if (typeof course === 'function') course(co.slug); else location.href = '/#programs'; }
+        }));
+      } catch { return []; }
+    }
+
+    function render(filter){
+      const q = (filter || '').trim().toLowerCase();
+      const filtered = items.filter(it => !q || it.label.toLowerCase().includes(q));
+      active = 0;
+      if (!filtered.length) {
+        list.innerHTML = '<div class="cmd-empty">No matches</div>';
+        return;
+      }
+      list.innerHTML = filtered.map((it, i) => `<div class="cmd-item${i===0?' active':''}" data-i="${i}" role="option">${esc ? esc(it.label) : it.label}</div>`).join('');
+      list.querySelectorAll('.cmd-item').forEach(el => {
+        el.onmouseenter = () => { list.querySelectorAll('.cmd-item').forEach(x => x.classList.remove('active')); el.classList.add('active'); active = Number(el.dataset.i); };
+        el.onclick = () => { close(); filtered[Number(el.dataset.i)].run(); };
+      });
+      list._filtered = filtered;
+    }
+
+    function close(){ overlay.remove(); }
+
+    loadCourses().then(courseItems => {
+      items = staticActions.concat(courseItems);
+      render('');
+    });
+    render('');
+
+    input.oninput = () => render(input.value);
+    input.onkeydown = (e) => {
+      const filtered = list._filtered || [];
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, filtered.length - 1); syncActive(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); syncActive(); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (filtered[active]) { close(); filtered[active].run(); } }
+    };
+    function syncActive(){
+      list.querySelectorAll('.cmd-item').forEach((el, i) => el.classList.toggle('active', i === active));
+      const cur = list.querySelector('.cmd-item.active'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+    }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    setTimeout(() => input.focus(), 10);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openPalette();
+    }
+  });
+  window.openSkilloraPalette = openPalette;
+})();
+
+/** Show skeleton course cards while /api/courses loads */
+(function skilloraSkeletons(){
+  const orig = window.renderCourses;
+  if (typeof orig !== 'function') return;
+  window.renderCourses = async function(){
+    const host = document.getElementById('course-grid') || document.querySelector('.course-grid') || document.querySelector('#programs .cards') || document.querySelector('#programs');
+    if (host && !host.dataset.skeletonOnce) {
+      host.dataset.skeletonOnce = '1';
+      const sk = Array.from({ length: 6 }).map(() => `<article class="course-card skeleton-card"><h3 class="skeleton">&nbsp;</h3><p class="skeleton">&nbsp;</p><p class="skeleton">&nbsp;</p></article>`).join('');
+      if (host.classList.contains('course-grid') || host.id === 'course-grid') host.innerHTML = sk;
+    }
+    return orig.apply(this, arguments);
+  };
+})();
+
+/** Certificate share helpers (Web Share API + clipboard + LinkedIn) */
+window.shareCertificate = async function shareCertificate({ title, code, verifyUrl }) {
+  const text = `I earned a certificate for "${title}" on Skillora Academy. Verify: ${verifyUrl}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'Skillora certificate', text, url: verifyUrl });
+      if (typeof toast === 'function') toast('Shared.');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    if (typeof toast === 'function') toast('Certificate link copied.');
+  } catch {
+    prompt('Copy this certificate link:', verifyUrl);
+  }
+};
+window.certificateShareCardHtml = function(cert) {
+  const title = cert.title || cert.course_title || 'Course';
+  const code = cert.code || '';
+  const base = (window.PUBLIC_URL || location.origin).replace(/\/$/, '');
+  const verifyUrl = base + '/verify/' + encodeURIComponent(code);
+  const linkedin = 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(verifyUrl);
+  return `<article class="cert-share-card" data-code="${code}">
+    <div><h3>${(typeof esc==='function'?esc(title):title)}</h3>
+    <p class="muted">Certificate code <code>${(typeof esc==='function'?esc(code):code)}</code></p></div>
+    <div class="cert-share-actions">
+      <button type="button" class="primary" data-share-cert="${code}">Share</button>
+      <button type="button" data-copy-cert="${code}">Copy link</button>
+      <a href="${linkedin}" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="${verifyUrl}" target="_blank" rel="noopener">Verify</a>
+    </div>
+  </article>`;
+};
+document.addEventListener('click', (e) => {
+  const shareBtn = e.target.closest('[data-share-cert]');
+  const copyBtn = e.target.closest('[data-copy-cert]');
+  if (!shareBtn && !copyBtn) return;
+  const code = (shareBtn || copyBtn).getAttribute(shareBtn ? 'data-share-cert' : 'data-copy-cert');
+  const card = (shareBtn || copyBtn).closest('[data-code]');
+  const title = card ? (card.querySelector('h3') || {}).textContent || 'Course' : 'Course';
+  const base = location.origin.replace(/\/$/, '');
+  const verifyUrl = base + '/verify/' + encodeURIComponent(code);
+  if (shareBtn) window.shareCertificate({ title, code, verifyUrl });
+  else if (copyBtn) {
+    navigator.clipboard.writeText(verifyUrl).then(() => { if (typeof toast === 'function') toast('Link copied.'); }).catch(() => prompt('Copy:', verifyUrl));
+  }
+});
