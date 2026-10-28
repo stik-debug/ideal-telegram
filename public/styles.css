@@ -1210,3 +1210,17 @@ html[data-theme="dark"] .cc-metric {
   background: #0f9b74;
   color: #fff;
 }
+
+/* Checkout */
+.checkout-box { margin-top: 8px; }
+.checkout-label { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.mpesa-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mpesa-form label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.price-panel .big-price { font-size: 32px; letter-spacing: -0.03em; }
+.btn-outline.checkout-mpesa-toggle {
+  background: transparent !important;
+  color: var(--green) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: none !important;
+}
+.btn-outline.checkout-mpesa-toggle:hover { border-color: var(--green2) !important; }

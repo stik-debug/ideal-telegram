@@ -288,6 +288,16 @@ function seed(db) {
 
 function open(file) {
   log('Node', process.version, 'DB_FILE=', file);
+  // Render: relative paths live on ephemeral disk and are wiped on redeploy
+  const onRender = !!(process.env.RENDER || process.env.RENDER_SERVICE_ID || /onrender\.com/i.test(process.env.PUBLIC_URL || ''));
+  const abs = file && file !== ':memory:' ? require('path').resolve(file) : file;
+  const looksEphemeral = !file || file === ':memory:' || String(file).startsWith('./') || String(file).startsWith('data/') || String(abs).includes('/opt/render/project');
+  if (onRender && looksEphemeral) {
+    logErr('WARNING: Database is on ephemeral storage. Accounts will disappear after redeploy.');
+    logErr('Fix: Add a Render Disk (mount /var/data) and set DB_FILE=/var/data/skillora.db');
+    logErr('Note: A Render PostgreSQL database is NOT used until the app is migrated to Postgres. This app uses SQLite.');
+  }
+
   const tryOnce = (label) => {
     log('open attempt:', label);
     const db = openDatabaseFile(file);

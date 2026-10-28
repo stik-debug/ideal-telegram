@@ -1,49 +1,97 @@
-# Deploy Skillora on Render (fixed)
+# Skillora on Render — deploy & keep logins
 
-## Why the old zip failed
-1. **Node version** — this app needs **Node 22.5+** (`node:sqlite`). Render often defaults to Node 18/20.
-2. **Zip folder layout** — `package.json` must be at the **repo root**, not inside a subfolder.
-3. **`DB_FILE=/var/data/...`** — that path only works with a paid persistent disk.
+## Why accounts disappear after deploy
 
-## Correct Render settings
+This app stores users in **SQLite** (a file on disk), controlled by `DB_FILE`.
 
-| Setting | Value |
-|---------|--------|
-| **Runtime** | Node |
-| **Root directory** | leave **empty** (repo root) |
-| **Build command** | `echo ok` (or leave blank) |
-| **Start command** | `npm start` |
-| **Node version** | **22.14.0** (set env `NODE_VERSION=22.14.0`) |
+| Setup | What happens |
+|--------|----------------|
+| `DB_FILE=./data/skillora.db` (default) | File lives on the **temporary** server disk → **wiped on redeploy** |
+| Render **PostgreSQL** addon only | **Not connected** — this app does not read `DATABASE_URL` yet |
+| **Persistent Disk** + `DB_FILE=/var/data/skillora.db` | File survives redeploys → **logins stay** |
 
-### Environment variables
+Adding a Postgres database in the Render dashboard does **not** move your data there automatically.
+
+---
+
+## Recommended fix: Persistent Disk + SQLite
+
+### 1. Add a disk (paid plan required)
+
+1. [dashboard.render.com](https://dashboard.render.com) → your **Web Service**
+2. Left menu → **Disks**
+3. **Add Disk**
+   - Name: `skillora-data`
+   - **Mount path:** `/var/data`
+   - Size: `1` GB
+4. Save (service redeploys)
+
+### 2. Set environment variables
 
 ```text
 NODE_VERSION=22.14.0
-DB_FILE=./data/skillora.db
+DB_FILE=/var/data/skillora.db
 COOKIE_SECURE=true
 PUBLIC_URL=https://YOUR-APP.onrender.com
-PAYSTACK_SECRET_KEY=sk_test_xxxx
-PAYSTACK_PUBLIC_KEY=pk_test_xxxx
 OWNER_EMAIL=you@example.com
-OWNER_PASSWORD=at-least-10-characters
+OWNER_PASSWORD=your-long-password
 OWNER_NAME=Your Name
+PAYSTACK_SECRET_KEY=sk_...
+PAYSTACK_PUBLIC_KEY=pk_...
 ```
 
-## Deploy steps
-1. Unzip so that `package.json` is visible at the top level.
-2. Push that folder to a GitHub repo (files at root, not nested).
-3. Render → New → Web Service → connect repo.
-4. Use the settings table above.
-5. Add env vars → Create Web Service.
+### 3. Redeploy and create the owner again
 
-## If logs show an error
-- `Cannot find module 'node:sqlite'` → Node is too old → set `NODE_VERSION=22.14.0` and redeploy.
-- `Cannot create or write database folder` → set `DB_FILE=./data/skillora.db`.
-- `npm ERR!` / missing package.json → Root Directory is wrong; clear it.
+After the disk is attached, the first boot creates a **new** empty database on the disk.
 
-## After it is live
-1. Open `https://YOUR-APP.onrender.com`
-2. Sign in with `OWNER_EMAIL` / `OWNER_PASSWORD`
-3. Control Center → Database & payments → Paystack should say Ready
-4. Paystack webhook: `https://YOUR-APP.onrender.com/api/webhooks/paystack`
-'''
+Sign up is not enough for admin — use `OWNER_EMAIL` / `OWNER_PASSWORD` env vars (server creates/promotes admin on startup), or:
+
+```bash
+# in Render Shell, from the service root:
+node --experimental-sqlite backend/create-admin.js you@example.com 'your-long-password' 'Your Name'
+```
+
+### 4. Confirm it worked
+
+In **Logs** you should see something like:
+
+```text
+[skillora:db] DB_FILE= /var/data/skillora.db
+```
+
+You should **not** see the ephemeral-storage warning.
+
+Create a test account → **Manual Deploy** again → log in still works.
+
+---
+
+## Free tier (no disk)
+
+Keep:
+
+```text
+DB_FILE=./data/skillora.db
+```
+
+Expect accounts to reset when Render rebuilds the instance. Fine for demos only.
+
+---
+
+## About PostgreSQL
+
+If you already created a Render Postgres instance:
+
+- It is **not used** by the current Skillora code.
+- You can delete it to save money, **or** keep it for a future migration.
+- Migrating this app to Postgres is a separate code change (all SQL + driver).
+
+---
+
+## Render service settings
+
+| Setting | Value |
+|---------|--------|
+| Build Command | `echo ok` |
+| Start Command | `npm start` |
+| Root Directory | *(empty)* |
+| Node | `22.14.0` via `NODE_VERSION` |

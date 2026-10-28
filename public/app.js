@@ -102,10 +102,80 @@ async function course(slug){
   try{
     const c=await api('/courses/'+encodeURIComponent(slug));
     const lessons=c.lessons||[];
-    setView(`<section class="view-shell"><button class="back-link" id="course-back">← All courses</button><div class="view-head"><p class="eyebrow dark">SKILLORA COURSE</p><h1>${esc(c.title)}</h1><p>${esc(c.summary)}</p></div><div class="course-detail-grid"><div><h2 style="font-size:19px">Your learning plan</h2><p style="color:var(--muted);font-size:12px;margin-bottom:17px">Preview free lessons, test your understanding and build momentum one step at a time.</p><div class="lesson-list">${lessons.length?lessons.map(l=>`<article class="lesson-row"><div><h3>${l.done?'✓ ':''}${esc(l.pos+'. '+l.title)}</h3><p>${l.is_free?'Free preview':l.locked?'Included with enrolment':'Available to you'}</p></div>${l.locked?'<span aria-label="Locked">🔒 Enrol to unlock</span>':`<button class="course-open" data-lesson="${l.id}">Open lesson</button>`}</article>`).join(''):'<div class="empty-state">Lessons for this course are still being prepared. Check back soon.</div>'}</div></div><aside class="panel price-panel"><p class="eyebrow dark">COURSE ACCESS</p><div class="big-price">KSh ${Number(c.price_kes).toLocaleString('en-KE')}</div><p>One-time listed course price. Confirm checkout availability before paying.</p>${c.enrolled?`<div class="result-panel">You are enrolled. Keep going!</div>${lessons.length && lessons.every(x=>x.done)?'<button class="btn-solid" style="width:100%;margin-top:12px" id="issue-certificate">Get certificate PDF</button>':'<p style="margin-top:12px">Complete every lesson to unlock your certificate.</p>'}`:`<button class="btn-solid" style="width:100%" id="buy-course" ${!lessons.length?'disabled':''}>Enrol in course</button><p style="margin-top:12px">A free lesson is available when included in this course.</p><div id="payment-message" role="status"></div>`}<div class="notice">Safety tip: only use the official checkout. Skillora will never ask you to share your M-Pesa PIN.</div></aside></div></section>`);
+    setView(`<section class="view-shell"><button class="back-link" id="course-back">← All courses</button><div class="view-head"><p class="eyebrow dark">SKILLORA COURSE</p><h1>${esc(c.title)}</h1><p>${esc(c.summary)}</p></div><div class="course-detail-grid"><div><h2 style="font-size:19px">Your learning plan</h2><p style="color:var(--muted);font-size:12px;margin-bottom:17px">Preview free lessons, test your understanding and build momentum one step at a time.</p><div class="lesson-list">${lessons.length?lessons.map(l=>`<article class="lesson-row"><div><h3>${l.done?'✓ ':''}${esc(l.pos+'. '+l.title)}</h3><p>${l.is_free?'Free preview':l.locked?'Included with enrolment':'Available to you'}</p></div>${l.locked?'<span aria-label="Locked">🔒 Enrol to unlock</span>':`<button class="course-open" data-lesson="${l.id}">Open lesson</button>`}</article>`).join(''):'<div class="empty-state">Lessons for this course are still being prepared. Check back soon.</div>'}</div></div><aside class="panel price-panel"><p class="eyebrow dark">COURSE ACCESS</p><div class="big-price">KSh ${Number(c.price_kes).toLocaleString('en-KE')}</div><p>One-time listed course price. Confirm checkout availability before paying.</p>${c.enrolled?`<div class="result-panel">You are enrolled. Keep going!</div>${lessons.length && lessons.every(x=>x.done)?'<button class="btn-solid" style="width:100%;margin-top:12px" id="issue-certificate">Get certificate PDF</button>':'<p style="margin-top:12px">Complete every lesson to unlock your certificate.</p>'}`:`
+<div class="checkout-box" id="checkout-box">
+  ${Number(c.price_kes)<1?`<button class="btn-solid" style="width:100%" id="buy-course" ${!lessons.length?'disabled':''}>Enrol free</button>`:`
+  <p class="checkout-label">Choose payment method</p>
+  <div class="checkout-methods" id="checkout-methods">
+    <button type="button" class="btn-solid" style="width:100%;margin-bottom:10px" id="pay-paystack" ${!lessons.length?'disabled':''}>Pay with card (Paystack)</button>
+    <button type="button" class="btn-outline checkout-mpesa-toggle" style="width:100%" id="pay-mpesa-toggle" ${!lessons.length?'disabled':''}>Pay with M-Pesa</button>
+  </div>
+  <form id="mpesa-form" class="mpesa-form" hidden>
+    <label>Safaricom number<input id="mpesa-phone" type="tel" inputmode="numeric" placeholder="0712 345 678" autocomplete="tel" required></label>
+    <button type="submit" class="btn-solid" style="width:100%" id="pay-mpesa">Send M-Pesa prompt</button>
+  </form>`}
+  <div id="payment-message" role="status"></div>
+</div>
+<p style="margin-top:12px">A free lesson is available when included in this course.</p>`}<div class="notice">Safety tip: only use the official checkout. Skillora will never ask you to share your M-Pesa PIN or card CVV by chat.</div></aside></div></section>`);
     if($('#course-back'))$('#course-back').onclick=()=>homeScroll();
     app.querySelectorAll('[data-lesson]').forEach(b=>b.onclick=()=>lesson(c,lessons.find(l=>String(l.id)===b.dataset.lesson)));
-    if($('#buy-course'))if($('#buy-course'))$('#buy-course').onclick=async()=>{if(!me)return auth();const el=$('#payment-message');if(typeof startMpesaCheckout==='function')return startMpesaCheckout(c,el);el.textContent='Preparing checkout…';try{const r=await api('/checkout','POST',{courseId:c.id,provider:'mpesa'});el.innerHTML=`<div class="notice">${esc(r.message||'Payment request created.')} Reference: <b>${esc(r.ref||'')}</b></div>`}catch(e){el.innerHTML=`<div class="notice">${esc(e.message)}${e.j&&e.j.ref?` Reference: ${esc(e.j.ref)}`:''}</div>`}};
+    const payMsg=(html)=>{const el=$('#payment-message');if(el)el.innerHTML=html;};
+    const runCheckout=async(provider,extra={})=>{
+      if(!me)return auth();
+      payMsg('<div class="notice">Preparing checkout…</div>');
+      try{
+        if(Number(c.price_kes)<1 || provider==='free'){
+          const r=await api('/enroll','POST',{courseId:c.id});
+          payMsg(`<div class="result-panel">${esc(r.message||'Enrolled.')}</div>`);
+          setTimeout(()=>course(c.slug),600);
+          return;
+        }
+        const r=await api('/checkout','POST',{courseId:c.id,provider,...extra});
+        if(r.enrolled || r.status==='successful'){
+          payMsg(`<div class="result-panel">${esc(r.message||'Enrolled.')}</div>`);
+          setTimeout(()=>course(c.slug),600);
+          return;
+        }
+        if(provider==='paystack' && r.authorization_url){
+          payMsg(`<div class="notice">${esc(r.message||'Redirecting to Paystack…')}</div>`);
+          window.location.href=r.authorization_url;
+          return;
+        }
+        if(provider==='mpesa'){
+          payMsg(`<div class="notice">${esc(r.message||'Check your phone for the M-Pesa prompt.')} Ref: <b>${esc(r.ref||'')}</b></div>`);
+          if(r.ref){
+            let tries=0;
+            const poll=async()=>{
+              tries++;
+              try{
+                const st=await api('/payments/'+encodeURIComponent(r.ref)+'/status');
+                if(st.status==='successful'){payMsg('<div class="result-panel">Payment received. Unlocking course…</div>');setTimeout(()=>course(c.slug),700);return;}
+                if(st.status==='failed'||st.status==='cancelled'){payMsg('<div class="notice">Payment was not completed. Try again.</div>');return;}
+              }catch{}
+              if(tries<24)setTimeout(poll,5000);
+            };
+            setTimeout(poll,4000);
+          }
+          return;
+        }
+        payMsg(`<div class="notice">${esc(r.message||'Payment pending.')} ${r.ref?'Ref: '+esc(r.ref):''}</div>`);
+      }catch(e){
+        payMsg(`<div class="notice">${esc(e.message)}${e.j&&e.j.ref?` Ref: ${esc(e.j.ref)}`:''}</div>`);
+      }
+    };
+    if($('#buy-course'))$('#buy-course').onclick=()=>runCheckout('free');
+    if($('#pay-paystack'))$('#pay-paystack').onclick=()=>runCheckout('paystack');
+    if($('#pay-mpesa-toggle'))$('#pay-mpesa-toggle').onclick=()=>{const f=$('#mpesa-form');if(f)f.hidden=!f.hidden;};
+    if($('#mpesa-form'))$('#mpesa-form').onsubmit=(e)=>{e.preventDefault();runCheckout('mpesa',{phone:$('#mpesa-phone').value});};
+    // Load which methods are enabled
+    (async()=>{
+      try{
+        const m=await api('/payments/methods');
+        if($('#pay-paystack')&&!(m.paystack&&m.paystack.enabled)){$('#pay-paystack').disabled=true;$('#pay-paystack').textContent='Card payments not configured';}
+        if($('#pay-mpesa-toggle')&&!(m.mpesa&&m.mpesa.enabled)){$('#pay-mpesa-toggle').disabled=true;$('#pay-mpesa-toggle').textContent='M-Pesa not configured';}
+      }catch{}
+    })();
+
     if($('#issue-certificate'))if($('#issue-certificate'))$('#issue-certificate').onclick=async()=>{const b=$('#issue-certificate');b.disabled=true;b.textContent='Preparing certificate…';try{const cert=await api('/courses/'+encodeURIComponent(c.slug)+'/certificate','POST',{});window.location.href='/api/certificates/'+encodeURIComponent(cert.code)+'.pdf'}catch(e){const el=$('#payment-message')||$('#issue-certificate').parentElement;el.insertAdjacentHTML('beforeend',`<div class="notice">${esc(e.message)}</div>`);b.disabled=false;b.textContent='Get certificate PDF'}};
   }catch(e){setView(`<section class="view-shell"><h1>Course unavailable</h1><p>${esc(e.message)}</p><button class="btn-solid" id="try-again">Back to courses</button></section>`);if($('#try-again'))$('#try-again').onclick=homeScroll}
 }
@@ -284,6 +354,25 @@ function home(){window.scrollTo({top:0,behavior:'smooth'});renderCourses()}
   } catch {}
 })();
 
+// Paystack return: ?payment=paystack&ref=SF...
+(async function handlePaymentReturn(){
+  try{
+    const u=new URL(location.href);
+    if(u.searchParams.get('payment')!=='paystack')return;
+    const ref=u.searchParams.get('ref')||u.searchParams.get('reference');
+    if(!ref)return;
+    const msg=document.createElement('div');
+    msg.className='notice';msg.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:80;background:#0c4b3d;color:#fff;padding:14px 18px;border-radius:12px;font-weight:700';
+    msg.textContent='Confirming payment…';
+    document.body.appendChild(msg);
+    try{
+      const r=await api('/payments/paystack/verify','POST',{ref});
+      msg.textContent=r.enrolled||r.status==='successful'?'Payment confirmed. Opening your courses…':'Payment still pending. If you were charged, wait a minute and refresh.';
+      if(r.enrolled||r.status==='successful'){setTimeout(()=>{try{history.replaceState({},'',location.pathname);}catch{}if(typeof dash==='function')dash();else location.href='/';},900);}
+    }catch(e){msg.textContent=e.message||'Could not verify payment.';}
+    setTimeout(()=>msg.remove(),6000);
+  }catch{}
+})();
 init();
 
 

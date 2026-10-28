@@ -169,6 +169,32 @@ function createApp(env = process.env) {
   // Payments: pending record is created server-side; access is granted ONLY by a signed webhook.
   const mpesa = mpesaLib.create(env);
   const paystack = paystackLib.create(env);
+  
+  // Free course enrol (price 0) — no payment provider required
+  R('POST', '/api/enroll', (c) => {
+    if (!c.user) return err(c.res, 401, 'Sign in required');
+    const co = db.prepare('SELECT * FROM courses WHERE id=? AND published=1').get(Number(c.body.courseId));
+    if (!co) return err(c.res, 404, 'Course not found');
+    if (db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id)) {
+      return send(c.res, 200, { ok: true, enrolled: true, message: 'You are already enrolled.' });
+    }
+    if (Number(co.price_kes) > 0 && c.user.role !== 'admin') {
+      return err(c.res, 402, 'This course requires payment. Use checkout.');
+    }
+    db.prepare('INSERT OR IGNORE INTO enrollments(user_id,course_id) VALUES(?,?)').run(c.user.id, co.id);
+    try { db.prepare('INSERT INTO audit_log(actor_id,action,target,detail) VALUES(?,?,?,?)').run(c.user.id, 'enroll.free', String(co.id), co.slug); } catch (_) {}
+    send(c.res, 200, { ok: true, enrolled: true, message: 'Enrolled successfully. Start learning.' });
+  });
+
+
+  R('GET', '/api/payments/methods', (c) => {
+    send(c.res, 200, {
+      mpesa: { enabled: !!(mpesa && mpesa.configured), label: 'M-Pesa' },
+      paystack: { enabled: !!(paystack && paystack.configured), label: 'Card / Paystack' },
+      currency: 'KES',
+    });
+  });
+
   R('POST', '/api/checkout', async (c) => {
     if (!c.user) return err(c.res, 401, 'Sign in required');
     const co = db.prepare('SELECT * FROM courses WHERE id=? AND published=1').get(Number(c.body.courseId)); if (!co) return err(c.res, 404, 'Course not found');
@@ -176,7 +202,10 @@ function createApp(env = process.env) {
     const provider = want === 'paystack' || want === 'card' ? 'paystack' : 'mpesa';
     const ref = 'SF' + crypto.randomBytes(8).toString('hex').toUpperCase();
     if (db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(c.user.id, co.id)) return err(c.res, 409, 'You are already enrolled in this course.');
-    if (co.price_kes < 1) return err(c.res, 400, 'This course has no price set.');
+    if (Number(co.price_kes) < 1) {
+      db.prepare('INSERT OR IGNORE INTO enrollments(user_id,course_id) VALUES(?,?)').run(c.user.id, co.id);
+      return send(c.res, 200, { ok: true, enrolled: true, ref: null, status: 'successful', message: 'This course is free. You are enrolled.' });
+    }
     if (limited('co' + c.user.id, 5)) return err(c.res, 429, 'Too many payment attempts. Please wait a minute.');
 
     if (provider === 'mpesa' && mpesa.configured) {
