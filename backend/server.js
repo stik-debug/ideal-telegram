@@ -127,7 +127,7 @@ function createApp(env = process.env) {
   R('POST', '/api/lessons/:id/quiz', (c, id) => {
     const l = lessonAccess(c, id); if (!l) return;
     const qs = db.prepare('SELECT * FROM quizzes WHERE lesson_id=?').all(l.id); const ans = c.body.answers || {};
-    let score = 0; const results = qs.map(q => { const ok = Number(ans[q.id]) === q.answer; if (ok) score++; return { id: q.id, correct: ok, explanation: q.explain }; });
+    let score = 0; const results = qs.map(q => { const ok = Number(ans[q.id]) === q.answer; if (ok) score++; return { id: q.id, correct: ok, explanation: (q.explanation ?? q.explain) }; });
     db.prepare('INSERT INTO quiz_attempts(user_id,lesson_id,score,total) VALUES(?,?,?,?)').run(c.user.id, l.id, score, qs.length); trackEvent(c.user.id,'quiz_attempted','lesson',l.id);
     send(c.res, 200, { score, total: qs.length, results });
   });
@@ -709,6 +709,13 @@ R('GET', '/api/admin/payments', admin((c) => send(c.res, 200, db.prepare('SELECT
 }
 module.exports = { createApp };
 if (require.main === module) {
-  const port = Number(process.env.PORT) || 3000;
-  createApp().server.listen(port, '0.0.0.0', () => console.log('Skillora Academy on port ' + port));
+  try {
+    const port = Number(process.env.PORT) || 3000;
+    const app = createApp(process.env);
+    app.server.listen(port, '0.0.0.0', () => console.log('Skillora Academy on port ' + port));
+  } catch (e) {
+    console.error('[skillora] FATAL startup error:', e && e.message ? e.message : e);
+    if (e && e.stack) console.error(e.stack);
+    process.exit(1);
+  }
 }

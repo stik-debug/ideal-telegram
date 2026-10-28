@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning backend/server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.js",
+    "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning backend/server.js",
+    "test": "node --experimental-sqlite --disable-warning=ExperimentalWarning --test tests/*.test.js",
     "create-admin": "node --disable-warning=ExperimentalWarning backend/create-admin.js",
     "backup": "node --disable-warning=ExperimentalWarning backend/backup.js"
   },

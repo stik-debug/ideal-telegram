@@ -71,7 +71,7 @@ module.exports = function registerFeatures({ R, db, send, err, mustUser, admin, 
     const box = correct ? Math.min((card ? card.box : 0) + 1, 5) : 1, due = addDays(today, INTERVALS[box]);
     db.prepare('INSERT INTO review_cards(user_id,quiz_id,box,due,last_reviewed,correct_count,wrong_count) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id,quiz_id) DO UPDATE SET box=excluded.box,due=excluded.due,last_reviewed=excluded.last_reviewed,correct_count=correct_count+?,wrong_count=wrong_count+?')
       .run(uid, quizId, box, due, today, correct ? 1 : 0, correct ? 0 : 1, correct ? 1 : 0, correct ? 0 : 1);
-    send(c.res, 200, { correct, correct_index: q.answer, explanation: q.explain || '', box, next_due: due });
+    send(c.res, 200, { correct, correct_index: q.answer, explanation: ((q.explanation ?? q.explain) || ''), box, next_due: due });
   });
 
   // ---------- Practice Lab (code runs in the learner's browser sandbox; completion is self-reported practice, not an assessment) ----------
