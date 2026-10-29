@@ -45,3 +45,17 @@ Use this checklist on the deployed staging site before accepting public payments
 
 ## Release gate
 Do not launch live payments until the payment provider integration, production secrets, backup/restore and device/accessibility checks above have been completed. The automated test suite does not prove live payment readiness or full accessibility conformance.
+
+## Release status for this source update (2026-10-29)
+
+This checklist is intentionally not marked complete. The source can be prepared and automated checks can run locally, but a production-ready claim requires access to the deployed Render service, its logs, persistent disk, real payment-provider sandbox/configuration, and owner-controlled production account. Do not accept live payments until every applicable item above has been tested on staging and the production smoke test passes.
+
+## Required deployment configuration
+
+- Set `PUBLIC_URL=https://skilloraacademy.space` (the live domain, not the example domain).
+- Set `DB_FILE=/var/data/skillora.db` only after confirming a persistent Render disk is mounted at `/var/data`; otherwise use the actual configured persistent mount path. Back up the existing database before changing this value and migrate/copy existing records safely.
+- Set a unique, long `OWNER_PASSWORD` and the actual `OWNER_EMAIL` in the hosting dashboard; never commit these secrets into the ZIP or Git repository.
+- Configure `COOKIE_SECURE=true` on HTTPS.
+- Configure provider credentials and callback/webhook secrets in the hosting dashboard only. Test with provider sandbox credentials first.
+- Configure real email delivery if email confirmation, password reset or transactional emails are expected to work. Development logs are not email delivery.
+- Deploy to staging first, run `npm test`, then manually run the release checklist on the deployed staging site. Deploy to production only after a successful backup and rollback plan.

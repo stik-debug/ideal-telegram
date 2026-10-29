@@ -36,7 +36,7 @@ test('paid lessons locked, quiz scoring, progress persists across sessions', asy
   assert.equal((await call('/api/courses/python-programming', 'GET', null, ck2)).j.lessons[0].done, true);
 });
 test('payments: no access without verified webhook; bad signature rejected; duplicates idempotent; amount checked', async () => {
-  const ck = await reg('buyer@x.com'); const co = (await call('/api/courses/python-programming')).j;
+  const ck = await reg('buyer@x.com'); const catalog = (await call('/api/courses')).j; const co = catalog.find(course => Number(course.price_kes) > 0); assert.ok(co, 'payment test requires at least one paid course');
   const ch = await call('/api/checkout', 'POST', { courseId: co.id }, ck); assert.equal(ch.s, 503); assert.equal(ch.j.live_payments_enabled, false);
   const uid = app.db.prepare("SELECT id FROM users WHERE email='buyer@x.com'").get().id, enrolled = () => app.db.prepare('SELECT COUNT(*) n FROM enrollments WHERE user_id=?').get(uid).n;
   assert.equal(enrolled(), 0);
@@ -44,7 +44,7 @@ test('payments: no access without verified webhook; bad signature rejected; dupl
   assert.equal((await hook({ event_id: 'e1', ref: ch.j.ref, status: 'successful', amount_kes: 1 })).status, 409); assert.equal(enrolled(), 0);
   const ok = { event_id: 'e2', ref: ch.j.ref, status: 'successful', amount_kes: co.price_kes };
   assert.equal((await hook(ok)).status, 200); assert.equal((await (await hook(ok)).json()).duplicate, true); assert.equal(enrolled(), 1);
-  const ch2 = await call('/api/checkout', 'POST', { courseId: co.id }, ck); await hook({ event_id: 'e3', ref: ch2.j.ref, status: 'failed' });
+  const ck2 = await reg('buyer2@x.com'); const ch2 = await call('/api/checkout', 'POST', { courseId: co.id }, ck2); await hook({ event_id: 'e3', ref: ch2.j.ref, status: 'failed' });
   assert.equal(app.db.prepare('SELECT status s FROM payments WHERE ref=?').get(ch2.j.ref).s, 'failed'); assert.equal(enrolled(), 1);
 });
 test('certificate requires all lessons; verify page works', async () => {

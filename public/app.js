@@ -50,7 +50,7 @@ async function init(){
   header(); $('#year').textContent=new Date().getFullYear();
   if($('#menu-toggle'))$('#menu-toggle').onclick=()=>{const open=$('#site-nav').classList.toggle('open');$('#menu-toggle').setAttribute('aria-expanded',String(open))};
   document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{const target=a.getAttribute('href');if(target&&target.length>1&&!document.querySelector(target)){e.preventDefault();window.location.href='/'+target}}));
-  if($('#hero-account'))$('#hero-account').onclick=auth; if($('#footer-login'))$('#footer-login').onclick=auth;
+  if($('#hero-account'))$('#hero-account').onclick=()=>auth(true); if($('#footer-login'))$('#footer-login').onclick=()=>auth(false); if($('#footer-signup'))$('#footer-signup').onclick=()=>auth(true);
   ['course-search','course-category','course-sort','saved-courses-only'].forEach(id=>{const el=$('#'+id);if(el)el.addEventListener(id==='course-search'?'input':'change',renderCourses)});
   initLearningRhythm();
   if($('#course-search-clear'))$('#course-search-clear').onclick=()=>{$('#course-search').value='';renderCourses();$('#course-search').focus()};
@@ -88,7 +88,7 @@ function renderCourses(){
 function auth(startRegister=false){
   setView(`<section class="view-shell"><button class="back-link" id="auth-back">← Back to courses</button><div class="auth-card"><p class="eyebrow dark">WELCOME TO SKILLORA</p><h1 id="auth-title">Your next chapter starts here.</h1><p style="color:var(--muted);font-size:13px">Sign in to continue learning, or create your free student account.</p><form id="auth-form"><div id="name-field" hidden><label class="form-field">Your name<input id="auth-name" name="name" autocomplete="name" maxlength="80"></label></div><label class="form-field">Email address<input id="auth-email" name="email" type="email" autocomplete="email" required></label><label class="form-field">Password<input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="10" required><small style="display:block;color:var(--muted);font-weight:500;margin-top:5px">Use at least 10 characters.</small></label><p id="auth-error" class="error-message" role="alert"></p><div class="form-actions"><button class="btn-solid" type="submit" id="auth-submit">Sign in</button><button class="btn-outline" type="button" id="auth-switch">Create account</button></div></form><p style="font-size:10px;color:var(--muted);margin-top:20px">Never share your password or M-Pesa PIN with anyone.</p></div></section>`);
   if($('#auth-back'))$('#auth-back').onclick=()=>{window.scrollTo({top:0,behavior:'smooth'});homeScroll()};
-  let registering=!!startRegister;
+  let registering=Boolean(startRegister);
   const update=()=>{$('#name-field').hidden=!registering;$('#auth-name').required=registering;$('#auth-title').textContent=registering?'Create your student account':'Welcome back';$('#auth-submit').textContent=registering?'Create account':'Sign in';$('#auth-switch').textContent=registering?'I already have an account':'Create account';$('#auth-password').autocomplete=registering?'new-password':'current-password';$('#auth-error').textContent=''};
   if($('#auth-switch'))$('#auth-switch').onclick=()=>{registering=!registering;update()};
   update();

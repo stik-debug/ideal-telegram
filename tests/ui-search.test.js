@@ -37,11 +37,10 @@ test('auth back-to-courses restores the original catalogue after SPA view replac
   assert.match(source, /header\(\);if\(me&&me\.role==='admin'&&\(location\.pathname==='\/admin'[^)]*\)\)await adminDash\(\);else if\(me\)await dash\(\);else homeScroll\(\)/);
 });
 
-test('sign-up is explicitly visible and opens registration mode', () => {
-  const app = js;
-  assert.match(app, /id=\"nav-in\">Log in/);
-  assert.match(app, /id=\"nav-join\">Sign up/);
-  assert.match(app, /onclick=\(\)=>auth\(true\)/);
-  assert.match(app, /function auth\(startRegister=false\)/);
-  assert.match(app, /let registering=!!startRegister/);
+test('sign-up is an explicit navigation action and opens registration by default', () => {
+  assert.match(js, /id=\"nav-join\">Sign up/);
+  assert.match(js, /id=\"nav-in\">Log in/);
+  assert.match(js, /function auth\(startRegister=false\)/);
+  assert.match(js, /nav-join.*onclick=\(\)=>auth\(true\)/);
+  assert.match(html, /id=\"footer-signup\"/);
 });
