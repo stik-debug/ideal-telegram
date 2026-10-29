@@ -288,14 +288,17 @@ function seed(db) {
 
 function open(file) {
   log('Node', process.version, 'DB_FILE=', file);
-  // Render: relative paths live on ephemeral disk and are wiped on redeploy
+  // Production must never silently use an ephemeral database: that makes student
+  // accounts, enrolments and progress appear to vanish after a redeploy.
   const onRender = !!(process.env.RENDER || process.env.RENDER_SERVICE_ID || /onrender\.com/i.test(process.env.PUBLIC_URL || ''));
-  const abs = file && file !== ':memory:' ? require('path').resolve(file) : file;
-  const looksEphemeral = !file || file === ':memory:' || String(file).startsWith('./') || String(file).startsWith('data/') || String(abs).includes('/opt/render/project');
-  if (onRender && looksEphemeral) {
-    logErr('WARNING: Database is on ephemeral storage. Accounts will disappear after redeploy.');
-    logErr('Fix: Add a Render Disk (mount /var/data) and set DB_FILE=/var/data/skillora.db');
-    logErr('Note: A Render PostgreSQL database is NOT used until the app is migrated to Postgres. This app uses SQLite.');
+  const abs = file && file !== ':memory:' ? path.resolve(file) : file;
+  const isAbsoluteFile = typeof file === 'string' && file !== ':memory:' && path.isAbsolute(file);
+  const allowEphemeral = process.env.SKILLORA_ALLOW_EPHEMERAL_DB === 'true' && process.env.NODE_ENV !== 'production';
+  if (onRender && (!isAbsoluteFile || !String(abs).startsWith('/var/data/'))) {
+    throw new Error('Unsafe production database configuration: on Render set DB_FILE to an absolute path on the persistent disk, e.g. /var/data/skillora.db. Attach a Render Disk mounted at /var/data first. Back up and migrate the existing database before switching paths.');
+  }
+  if (!onRender && file !== ':memory:' && !isAbsoluteFile && !allowEphemeral) {
+    logErr('Database path is relative. For production, configure an absolute persistent DB_FILE.');
   }
 
   const tryOnce = (label) => {
@@ -317,29 +320,10 @@ function open(file) {
   try {
     return tryOnce('primary');
   } catch (e) {
-    logErr('primary open failed:', e.message);
-    if (file && file !== ':memory:') {
-      const abs = path.resolve(file);
-      const bak = abs + '.broken-' + Date.now();
-      try {
-        if (fs.existsSync(abs)) {
-          fs.renameSync(abs, bak);
-          log('moved broken DB to', bak);
-        }
-        // also clear WAL/SHM if any
-        for (const s of ['-wal', '-shm']) {
-          try { if (fs.existsSync(abs + s)) fs.unlinkSync(abs + s); } catch (_) {}
-        }
-      } catch (re) {
-        logErr('could not quarantine broken DB:', re.message);
-      }
-      try {
-        return tryOnce('after-reset');
-      } catch (e2) {
-        logErr('retry after reset failed:', e2.message);
-        throw e2;
-      }
-    }
+    // Never rename, delete, or replace a failed production database automatically.
+    // A fresh database can make every account and course record appear to vanish.
+    logErr('Database open/validation failed. Existing database was NOT reset or renamed.');
+    logErr('Stop deployment and restore from a verified backup or repair the database before retrying.');
     throw e;
   }
 }

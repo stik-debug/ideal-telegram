@@ -1,51 +1,17 @@
-# Persistence, accounts & payments — Skillora
+# Persistence and payment safety
 
-## Why accounts looked “lost”
-The app has always used **SQLite** (`DB_FILE`, default `./data/skillforge.db`).  
-On many hosts (Render, Railway, Fly free tiers, etc.) the filesystem is **ephemeral**: every redeploy wipes `./data`.
+## Student accounts disappearing after deployment
 
-### Fix (required for production)
-1. Attach a **persistent volume**.
-2. Set environment variable:
-   ```bash
-   DB_FILE=/var/data/skillora.db
-   ```
-3. Keep `COOKIE_SECURE=true` and `PUBLIC_URL=https://your-domain` when live.
+The app uses SQLite controlled by `DB_FILE`. A relative path such as `./data/skillforge.db` is not persistent on Render and can be wiped by a redeploy. In the existing Render service, attach a persistent disk mounted at `/var/data` and set `DB_FILE=/var/data/skillora.db`.
 
-## What we added
-- **WAL mode** + busy timeout for safer concurrent writes
-- **Soft-delete accounts** (`deleted_at`): learners can close an account; email is freed; learning rows stay until an admin **purges**
-- **GET `/api/account/export`** — JSON download of the learner’s data
-- **POST `/api/account/delete`** — password-confirmed close
-- **Admin**: list closed accounts, restore (new email), permanent purge, **one-click backup**
-- **Paystack** alongside **M-Pesa STK** (card / alternative checkout)
+**Before changing the path:** back up the database used by the current live service and restore that exact database file to the persistent disk. Merely changing `DB_FILE` creates/opens a different database; it does not copy existing users or records. Test the restored database before deployment. Do not overwrite a non-empty production database with an empty one.
 
-## Payment APIs
+The application now blocks unsafe relative database paths on Render and does not automatically reset a production database when opening/validation fails. This avoids silently making all users start over. If records were already erased from temporary storage and no backup exists, source-code changes cannot recover them.
 
-### M-Pesa (Safaricom Daraja)
-Set: `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_SHORTCODE`, `MPESA_PASSKEY`, `MPESA_CALLBACK_SECRET`, `PUBLIC_URL` (https).
+## Payment safety
 
-Checkout: `POST /api/checkout` with `{ courseId, provider: "mpesa", phone: "0712345678" }`.
+Only grant paid-course access after the server verifies a provider's successful payment callback. Keep payment secrets in the hosting environment, protect against duplicate webhook events, reconcile payments and enrolments, and test failed/pending/retried payments in the provider's sandbox before production.
 
-### Paystack
-Set: `PAYSTACK_SECRET_KEY`, optional `PAYSTACK_PUBLIC_KEY`, `PUBLIC_URL` (https).
+## Backup policy
 
-Checkout: `POST /api/checkout` with `{ courseId, provider: "paystack" }`  
-→ returns `authorization_url`. After payment, Paystack calls  
-`POST /api/webhooks/paystack` (configure this URL in the Paystack dashboard).  
-Learners can also `POST /api/payments/paystack/verify` with `{ ref }` after redirect.
-
-Access is granted **only** after a verified webhook (or successful verify). Pending payments never unlock courses.
-
-## Control Center
-Sign in as admin → **Control Center** (or `/admin`, Alt+Shift+A).
-
-New panels:
-- **Closed accounts** — restore / purge
-- **Database & payments** — provider status + run backup
-
-## Frontend polish (this release)
-- Course **skeleton loaders**
-- **Command palette** — `Ctrl+K` / `Cmd+K`
-- **Certificate share** helpers (Web Share, copy link, LinkedIn)
-'''
+Keep encrypted backups outside the web service, restrict access, record backup timestamps, and periodically test restoration into a separate staging database. A persistent disk is not a backup.

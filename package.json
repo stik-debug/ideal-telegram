@@ -9,7 +9,8 @@
     "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning backend/server.js",
     "test": "node --experimental-sqlite --disable-warning=ExperimentalWarning --test tests/*.test.js",
     "create-admin": "node --experimental-sqlite --disable-warning=ExperimentalWarning backend/create-admin.js",
-    "backup": "node --experimental-sqlite --disable-warning=ExperimentalWarning backend/backup.js"
+    "backup": "node --experimental-sqlite --disable-warning=ExperimentalWarning backend/backup.js",
+    "migrate-db": "node --experimental-sqlite --disable-warning=ExperimentalWarning scripts/migrate-db-to-persistent.js"
   },
   "dependencies": {}
 }

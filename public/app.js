@@ -40,17 +40,17 @@ function setView(html){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function header(){
-  $('#nav').innerHTML = `<button class="nav-btn" id="nav-careers">Careers</button><button class="nav-btn" id="nav-marketplace">Freelance</button><button class="nav-btn" id="nav-membership">Plans</button>` + (me ? `${me.role==='admin'?'<button class="nav-btn nav-owner" id="nav-admin">Control Center</button>':''}<button class="nav-btn" id="nav-dashboard">My learning</button><button class="nav-btn primary" id="nav-out">Sign out</button>` : `<button class="nav-btn" id="nav-in">Log in</button><button class="nav-btn primary" id="nav-join">Sign up</button>`);
+  $('#nav').innerHTML = `<button class="nav-btn" id="nav-careers">Careers</button><button class="nav-btn" id="nav-marketplace">Freelance</button><button class="nav-btn" id="nav-membership">Plans</button>` + (me ? `${me.role==='admin'?'<button class="nav-btn nav-owner" id="nav-admin">Control Center</button>':''}<button class="nav-btn" id="nav-dashboard">My learning</button><button class="nav-btn primary" id="nav-out">Sign out</button>` : `<button class="nav-btn" id="nav-in">Sign in</button><button class="nav-btn primary" id="nav-join">Get started</button>`);
   if($('#nav-careers'))$('#nav-careers').onclick=careerMarketplace;if($('#nav-marketplace'))$('#nav-marketplace').onclick=freelanceMarketplace;if($('#nav-membership'))$('#nav-membership').onclick=membershipPage;
   if(me){if($('#nav-admin'))if($('#nav-admin'))$('#nav-admin').onclick=adminDash;if($('#nav-dashboard'))$('#nav-dashboard').onclick=dash;if($('#nav-out'))$('#nav-out').onclick=async()=>{try{await api('/logout','POST')}finally{me=null;header();homeScroll()}}}
-  else {if($('#nav-in'))$('#nav-in').onclick=()=>auth(false);if($('#nav-join'))$('#nav-join').onclick=()=>auth(true)}
+  else {if($('#nav-in'))$('#nav-in').onclick=auth;if($('#nav-join'))$('#nav-join').onclick=auth}
 }
 async function init(){
   try{me=await api('/me')}catch{me=null}
   header(); $('#year').textContent=new Date().getFullYear();
   if($('#menu-toggle'))$('#menu-toggle').onclick=()=>{const open=$('#site-nav').classList.toggle('open');$('#menu-toggle').setAttribute('aria-expanded',String(open))};
   document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{const target=a.getAttribute('href');if(target&&target.length>1&&!document.querySelector(target)){e.preventDefault();window.location.href='/'+target}}));
-  if($('#hero-account'))$('#hero-account').onclick=()=>auth(true); if($('#footer-login'))$('#footer-login').onclick=()=>auth(false); if($('#footer-signup'))$('#footer-signup').onclick=()=>auth(true);
+  if($('#hero-account'))$('#hero-account').onclick=auth; if($('#footer-login'))$('#footer-login').onclick=auth;
   ['course-search','course-category','course-sort','saved-courses-only'].forEach(id=>{const el=$('#'+id);if(el)el.addEventListener(id==='course-search'?'input':'change',renderCourses)});
   initLearningRhythm();
   if($('#course-search-clear'))$('#course-search-clear').onclick=()=>{$('#course-search').value='';renderCourses();$('#course-search').focus()};
@@ -85,13 +85,12 @@ function renderCourses(){
   $('#course-list').querySelectorAll('[data-save-course]').forEach(b=>b.onclick=()=>{const slug=String(b.dataset.saveCourse);if(savedCourses.has(slug))savedCourses.delete(slug);else savedCourses.add(slug);persistSavedCourses();renderCourses()});
   if($('#reset-course-filters'))if($('#reset-course-filters'))$('#reset-course-filters').onclick=()=>{searchEl.value='';categoryEl.value='all';sortEl.value='recommended';savedOnlyEl.checked=false;renderCourses()};
 }
-function auth(startRegister=false){
+function auth(){
   setView(`<section class="view-shell"><button class="back-link" id="auth-back">← Back to courses</button><div class="auth-card"><p class="eyebrow dark">WELCOME TO SKILLORA</p><h1 id="auth-title">Your next chapter starts here.</h1><p style="color:var(--muted);font-size:13px">Sign in to continue learning, or create your free student account.</p><form id="auth-form"><div id="name-field" hidden><label class="form-field">Your name<input id="auth-name" name="name" autocomplete="name" maxlength="80"></label></div><label class="form-field">Email address<input id="auth-email" name="email" type="email" autocomplete="email" required></label><label class="form-field">Password<input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="10" required><small style="display:block;color:var(--muted);font-weight:500;margin-top:5px">Use at least 10 characters.</small></label><p id="auth-error" class="error-message" role="alert"></p><div class="form-actions"><button class="btn-solid" type="submit" id="auth-submit">Sign in</button><button class="btn-outline" type="button" id="auth-switch">Create account</button></div></form><p style="font-size:10px;color:var(--muted);margin-top:20px">Never share your password or M-Pesa PIN with anyone.</p></div></section>`);
   if($('#auth-back'))$('#auth-back').onclick=()=>{window.scrollTo({top:0,behavior:'smooth'});homeScroll()};
-  let registering=Boolean(startRegister);
+  let registering=false;
   const update=()=>{$('#name-field').hidden=!registering;$('#auth-name').required=registering;$('#auth-title').textContent=registering?'Create your student account':'Welcome back';$('#auth-submit').textContent=registering?'Create account':'Sign in';$('#auth-switch').textContent=registering?'I already have an account':'Create account';$('#auth-password').autocomplete=registering?'new-password':'current-password';$('#auth-error').textContent=''};
   if($('#auth-switch'))$('#auth-switch').onclick=()=>{registering=!registering;update()};
-  update();
   if($('#auth-form'))$('#auth-form').onsubmit=async e=>{e.preventDefault();const err=$('#auth-error');err.textContent='';const b=$('#auth-submit');b.disabled=true;b.textContent='Please wait…';try{await api(registering?'/register':'/login','POST',{name:$('#auth-name').value,email:$('#auth-email').value.trim(),password:$('#auth-password').value,referral_code:new URLSearchParams(location.search).get('ref')||''});me=await api('/me');header();if(me&&me.role==='admin'&&(location.pathname==='/admin'||location.pathname==='/control-center'))await adminDash();else if(me)await dash();else homeScroll();}catch(ex){err.textContent=ex.message;}finally{b.disabled=false;b.textContent=registering?'Create account':'Sign in'}};
 }
 function homeScroll(){

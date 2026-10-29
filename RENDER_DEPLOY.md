@@ -1,97 +1,44 @@
-# Skillora on Render — deploy & keep logins
+# Skillora Academy on Render — persistent accounts and safe deployments
 
-## Why accounts disappear after deploy
+## Critical: the database must live on persistent storage
 
-This app stores users in **SQLite** (a file on disk), controlled by `DB_FILE`.
+Skillora currently uses SQLite (`DB_FILE`). The default relative path (`./data/skillforge.db`) is on the Render service's temporary filesystem. If the service is redeployed or rebuilt, that database may be removed. That is why accounts, enrolments and progress can appear to reset.
 
-| Setup | What happens |
-|--------|----------------|
-| `DB_FILE=./data/skillora.db` (default) | File lives on the **temporary** server disk → **wiped on redeploy** |
-| Render **PostgreSQL** addon only | **Not connected** — this app does not read `DATABASE_URL` yet |
-| **Persistent Disk** + `DB_FILE=/var/data/skillora.db` | File survives redeploys → **logins stay** |
+The app now refuses to start on Render unless `DB_FILE` points to an absolute path under `/var/data/`. This is intentional protection: a clear deployment error is safer than silently launching an empty academy.
 
-Adding a Postgres database in the Render dashboard does **not** move your data there automatically.
+## Do not change the database path before backing up existing records
 
----
+If the current live service still contains student accounts or payments, **do not redeploy or change `DB_FILE` yet**. First make a recoverable copy of the current database using the currently deployed service's Render Shell/backup procedure. Confirm the backup file exists and is non-empty, and retain a copy outside the service. If your current deployment has already reset and no backup exists, those deleted records cannot be reconstructed from this source ZIP.
 
-## Recommended fix: Persistent Disk + SQLite
+## Recommended Render setup
 
-### 1. Add a disk (paid plan required)
+1. Open the existing Skillora Web Service in the Render dashboard.
+2. Before changing environment variables or attaching storage, back up the database currently used by the live service.
+3. Attach a persistent Render Disk to the existing service with mount path `/var/data` (disk availability and pricing depend on your Render plan).
+4. Restore/copy the verified existing database onto that disk as `/var/data/skillora.db`. Do not create an empty replacement if you need to preserve existing users.
+5. Set `DB_FILE=/var/data/skillora.db` in the existing service's environment variables.
+6. Keep the existing service, domain, secret values, payment-provider credentials and other environment settings. Do not create a new service unless there is a separate reason.
+7. Deploy and inspect logs. Confirm the startup log shows `DB_FILE= /var/data/skillora.db` and there is no unsafe/ephemeral database error.
+8. Test login with an existing account, check a known enrolment and progress record, then create a test account.
+9. Trigger a second deployment and confirm both accounts, enrolments, payments and progress still exist.
+10. Keep scheduled off-site backups and test restoration regularly.
 
-1. [dashboard.render.com](https://dashboard.render.com) → your **Web Service**
-2. Left menu → **Disks**
-3. **Add Disk**
-   - Name: `skillora-data`
-   - **Mount path:** `/var/data`
-   - Size: `1` GB
-4. Save (service redeploys)
+## Environment variables
 
-### 2. Set environment variables
+Set the database path on the existing service:
 
 ```text
-NODE_VERSION=22.14.0
 DB_FILE=/var/data/skillora.db
 COOKIE_SECURE=true
-PUBLIC_URL=https://YOUR-APP.onrender.com
-OWNER_EMAIL=you@example.com
-OWNER_PASSWORD=your-long-password
-OWNER_NAME=Your Name
-PAYSTACK_SECRET_KEY=sk_...
-PAYSTACK_PUBLIC_KEY=pk_...
+PUBLIC_URL=https://skilloraacademy.space
 ```
 
-### 3. Redeploy and create the owner again
+Keep your actual existing `OWNER_EMAIL`, `OWNER_PASSWORD`, payment-provider keys, mail settings and other secrets configured in Render. Never put production secrets into this ZIP or commit them to GitHub.
 
-After the disk is attached, the first boot creates a **new** empty database on the disk.
+## Important notes
 
-Sign up is not enough for admin — use `OWNER_EMAIL` / `OWNER_PASSWORD` env vars (server creates/promotes admin on startup), or:
-
-```bash
-# in Render Shell, from the service root:
-node --experimental-sqlite backend/create-admin.js you@example.com 'your-long-password' 'Your Name'
-```
-
-### 4. Confirm it worked
-
-In **Logs** you should see something like:
-
-```text
-[skillora:db] DB_FILE= /var/data/skillora.db
-```
-
-You should **not** see the ephemeral-storage warning.
-
-Create a test account → **Manual Deploy** again → log in still works.
-
----
-
-## Free tier (no disk)
-
-Keep:
-
-```text
-DB_FILE=./data/skillora.db
-```
-
-Expect accounts to reset when Render rebuilds the instance. Fine for demos only.
-
----
-
-## About PostgreSQL
-
-If you already created a Render Postgres instance:
-
-- It is **not used** by the current Skillora code.
-- You can delete it to save money, **or** keep it for a future migration.
-- Migrating this app to Postgres is a separate code change (all SQL + driver).
-
----
-
-## Render service settings
-
-| Setting | Value |
-|---------|--------|
-| Build Command | `echo ok` |
-| Start Command | `npm start` |
-| Root Directory | *(empty)* |
-| Node | `22.14.0` via `NODE_VERSION` |
+- Adding a Render PostgreSQL instance does not migrate this application to PostgreSQL. The current code uses SQLite; a PostgreSQL migration requires a separate code and data migration.
+- A persistent disk protects the database file from ordinary redeploys, but it is not a backup. Keep separate backups.
+- Do not use `:memory:` or a relative path for production.
+- The application no longer automatically renames a failed production database and boots a fresh one. A database error should stop startup and trigger recovery, not erase the evidence.
+- Use a staging deployment to test code changes before production.
