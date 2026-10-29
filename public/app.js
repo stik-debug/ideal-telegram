@@ -528,3 +528,260 @@ document.addEventListener('click', (e) => {
     navigator.clipboard.writeText(verifyUrl).then(() => { if (typeof toast === 'function') toast('Link copied.'); }).catch(() => prompt('Copy:', verifyUrl));
   }
 });
+
+/* GROWTH_FEATURES_START */
+(function growthFeatures(){
+  const $ = (s,r=document)=>r.querySelector(s);
+  const $$ = (s,r=document)=>Array.from((r||document).querySelectorAll(s));
+
+  // Capture referral code from URL
+  try {
+    const u = new URL(location.href);
+    const ref = u.searchParams.get('ref');
+    if (ref) {
+      localStorage.setItem('skillora.ref', ref);
+      fetch('/api/referral/hit', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code: ref }), credentials:'same-origin' }).catch(()=>{});
+    }
+  } catch {}
+
+  // Password reset from email link
+  try {
+    const u = new URL(location.href);
+    const token = u.searchParams.get('reset');
+    if (token) {
+      document.addEventListener('DOMContentLoaded', () => showResetPassword(token));
+    }
+  } catch {}
+
+  function showResetPassword(token) {
+    if (typeof setView !== 'function') return;
+    setView(`<section class="view-shell"><div class="auth-card" style="max-width:440px;margin:40px auto">
+      <h1>Set a new password</h1>
+      <p>Choose a password with at least 10 characters.</p>
+      <form id="reset-form"><label>New password<input type="password" name="password" required minlength="10" autocomplete="new-password"></label>
+      <button class="btn-solid" type="submit">Update password</button>
+      <p id="reset-msg" role="status"></p></form></div></section>`);
+    const form = $('#reset-form');
+    if (!form) return;
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const password = form.password.value;
+      try {
+        const r = await api('/password/reset','POST',{ token, password });
+        $('#reset-msg').textContent = r.message || 'Password updated.';
+        setTimeout(()=>{ try{ history.replaceState({},'', '/'); }catch{} auth(); }, 800);
+      } catch (err) { $('#reset-msg').textContent = err.message; }
+    };
+  }
+
+  // Legal pages
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-legal]');
+    if (!btn) return;
+    e.preventDefault();
+    const page = btn.getAttribute('data-legal');
+    try {
+      const data = await api('/legal/' + page);
+      setView(`<section class="view-shell legal-page"><button class="back-link" id="legal-back">← Back</button>
+        <div class="view-head"><p class="eyebrow dark">SKILLORA</p><h1>${esc(data.title)}</h1>
+        <p>Updated ${esc(data.updated||'')}</p></div>
+        <article class="panel legal-body">${data.html}</article></section>`);
+      $('#legal-back').onclick = () => location.assign('/');
+    } catch (err) {
+      setView(`<section class="view-shell"><h1>Unavailable</h1><p>${esc(err.message)}</p></section>`);
+    }
+  });
+
+  // Enhance auth() with forgot password when present
+  const prevAuth = window.auth;
+  if (typeof prevAuth === 'function') {
+    window.auth = function() {
+      prevAuth.apply(this, arguments);
+      setTimeout(() => {
+        const card = document.querySelector('.auth-card');
+        if (!card || card.querySelector('#forgot-link')) return;
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.id = 'forgot-link';
+        link.className = 'linkish';
+        link.style.marginTop = '10px';
+        link.textContent = 'Forgot password?';
+        link.onclick = () => showForgot();
+        card.appendChild(link);
+        // attach referral code to register if form exists
+        const reg = card.querySelector('form');
+        if (reg && !reg.querySelector('[name=referral_code]')) {
+          const ref = localStorage.getItem('skillora.ref') || '';
+          if (ref) {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden'; hidden.name = 'referral_code'; hidden.value = ref;
+            reg.appendChild(hidden);
+          }
+        }
+      }, 50);
+    };
+  }
+
+  function showForgot() {
+    setView(`<section class="view-shell"><div class="auth-card" style="max-width:440px;margin:40px auto">
+      <h1>Forgot password</h1>
+      <p>Enter your account email. If it exists, we will send a reset link.</p>
+      <form id="forgot-form"><label>Email<input type="email" name="email" required autocomplete="email"></label>
+      <button class="btn-solid" type="submit">Send reset link</button>
+      <p id="forgot-msg" role="status"></p>
+      <button type="button" class="linkish" id="back-signin">Back to sign in</button></form></div></section>`);
+    $('#back-signin').onclick = () => auth();
+    $('#forgot-form').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api('/password/forgot','POST',{ email: e.target.email.value });
+        $('#forgot-msg').textContent = r.message || 'Check your email.';
+      } catch (err) { $('#forgot-msg').textContent = err.message; }
+    };
+  }
+
+  // Testimonials on home
+  async function loadTestimonials() {
+    const grid = document.getElementById('testimonial-grid');
+    if (!grid) return;
+    try {
+      const rows = await fetch('/api/testimonials').then(r=>r.json());
+      grid.innerHTML = (rows || []).map(t => `<article class="testimonial-card"><p>“${esc(t.quote)}”</p><footer><strong>${esc(t.name)}</strong><span>${esc(t.role||'')}</span></footer></article>`).join('') || '<p class="muted">Stories coming soon.</p>';
+    } catch { grid.innerHTML = ''; }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadTestimonials);
+  else loadTestimonials();
+
+  // Continue learning strip when dashboard loads — patch dash if exists
+  const prevDash = window.dash;
+  if (typeof prevDash === 'function') {
+    window.dash = async function() {
+      await prevDash.apply(this, arguments);
+      try {
+        const rows = await api('/me/continue');
+        if (!rows || !rows.length) return;
+        const shell = document.querySelector('#main .view-shell') || document.querySelector('.view-shell');
+        if (!shell || shell.querySelector('#continue-learning')) return;
+        const box = document.createElement('section');
+        box.id = 'continue-learning';
+        box.className = 'panel';
+        box.style.marginTop = '18px';
+        box.innerHTML = `<h2 style="font-size:18px;margin:0 0 12px">Continue learning</h2>
+          <div class="continue-grid">${rows.map(r => `
+            <article class="continue-card">
+              <div><strong>${esc(r.title)}</strong>
+              <div class="progress-bar" aria-label="${r.percent}% complete"><span style="width:${r.percent}%"></span></div>
+              <small>${r.done}/${r.total} lessons · ${r.percent}%</small></div>
+              <button type="button" class="btn-solid" data-continue="${esc(r.slug)}">Continue</button>
+            </article>`).join('')}</div>`;
+        const head = shell.querySelector('.view-head');
+        if (head && head.nextSibling) shell.insertBefore(box, head.nextSibling);
+        else shell.appendChild(box);
+        box.querySelectorAll('[data-continue]').forEach(b => b.onclick = () => course(b.getAttribute('data-continue')));
+      } catch {}
+    };
+  }
+
+  // Course page: reviews + video embeds in lesson bodies handled via CSS
+  const prevCourse = window.course;
+  if (typeof prevCourse === 'function') {
+    window.course = async function(slug) {
+      await prevCourse.apply(this, arguments);
+      setTimeout(() => enhanceCoursePage(slug), 30);
+    };
+  }
+
+  async function enhanceCoursePage(slug) {
+    const shell = document.querySelector('.view-shell');
+    if (!shell || shell.querySelector('#course-reviews')) return;
+    // progress banner for enrolled
+    try {
+      const cont = await api('/me/continue').catch(()=>[]);
+      const mine = (cont || []).find(x => x.slug === slug);
+      if (mine) {
+        const head = shell.querySelector('.view-head');
+        if (head && !head.querySelector('.course-progress-inline')) {
+          const p = document.createElement('div');
+          p.className = 'course-progress-inline';
+          p.innerHTML = `<div class="progress-bar"><span style="width:${mine.percent}%"></span></div><small>${mine.percent}% complete · ${mine.done}/${mine.total} lessons</small>`;
+          head.appendChild(p);
+        }
+      }
+    } catch {}
+    try {
+      const data = await api('/courses/' + encodeURIComponent(slug) + '/reviews');
+      const sec = document.createElement('section');
+      sec.id = 'course-reviews';
+      sec.className = 'panel';
+      sec.style.marginTop = '20px';
+      sec.innerHTML = `<h2 style="font-size:18px">Student reviews ${data.count?`· ${data.average}★ (${data.count})`:''}</h2>
+        <div id="review-list">${(data.reviews||[]).map(r=>`<article class="review-item"><strong>${esc(r.name)}</strong> · ${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}<p>${esc(r.body||'')}</p></article>`).join('') || '<p class="muted">No reviews yet. Be the first after you enrol.</p>'}</div>
+        <form id="review-form" class="review-form"><h3>Your review</h3>
+          <label>Rating<select name="rating" required><option value="5">5 — Excellent</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1</option></select></label>
+          <label>Comment<textarea name="body" maxlength="1000" placeholder="What helped you most?"></textarea></label>
+          <button class="btn-solid" type="submit">Submit review</button>
+          <p id="review-msg" role="status"></p>
+        </form>`;
+      shell.appendChild(sec);
+      const form = $('#review-form');
+      if (form) form.onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          await api('/courses/' + encodeURIComponent(slug) + '/reviews', 'POST', {
+            rating: Number(form.rating.value),
+            body: form.body.value,
+          });
+          $('#review-msg').textContent = 'Thanks — your review was saved.';
+          enhanceCoursePage(slug);
+          sec.remove();
+        } catch (err) { $('#review-msg').textContent = err.message; }
+      };
+    } catch {}
+  }
+
+  // Referral card on dashboard
+  document.addEventListener('skillora:dash', () => {});
+  const _dash2 = window.dash;
+  if (typeof _dash2 === 'function') {
+    window.dash = async function() {
+      await _dash2.apply(this, arguments);
+      try {
+        const ref = await api('/referral/me');
+        const shell = document.querySelector('#main .view-shell') || document.querySelector('.view-shell');
+        if (!shell || shell.querySelector('#referral-box')) return;
+        const box = document.createElement('section');
+        box.id = 'referral-box';
+        box.className = 'panel';
+        box.style.marginTop = '16px';
+        box.innerHTML = `<h2 style="font-size:18px">Invite friends</h2>
+          <p class="muted">Share your personal link. Signups through your link are tracked.</p>
+          <div class="referral-row"><input readonly value="${esc(ref.link)}" id="ref-link"><button type="button" class="course-open" id="copy-ref">Copy link</button></div>
+          <p class="muted">Clicks: ${ref.clicks||0} · Signups: ${ref.signups||0}</p>`;
+        shell.appendChild(box);
+        $('#copy-ref').onclick = async () => {
+          try { await navigator.clipboard.writeText(ref.link); $('#copy-ref').textContent = 'Copied'; }
+          catch { $('#ref-link').select(); }
+        };
+      } catch {}
+    };
+  }
+
+  // Lesson body: auto-embed YouTube / Vimeo links
+  const prevLesson = window.lesson;
+  if (typeof prevLesson === 'function') {
+    window.lesson = function(c, l) {
+      prevLesson.apply(this, arguments);
+      setTimeout(() => {
+        const body = document.querySelector('.lesson-body');
+        if (!body || body.dataset.embedDone) return;
+        body.dataset.embedDone = '1';
+        const html = body.innerHTML;
+        const replaced = html.replace(/(https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{6,}))/g,
+          (m, url, id) => `<div class="video-embed"><iframe src="https://www.youtube.com/embed/${id}" title="Lesson video" allowfullscreen loading="lazy"></iframe></div>`);
+        if (replaced !== html) body.innerHTML = replaced;
+      }, 20);
+    };
+  }
+})();
+/* GROWTH_FEATURES_END */
+

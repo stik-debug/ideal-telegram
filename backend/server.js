@@ -1,6 +1,7 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { open, backup } = require('./db'); const { hash, verify } = require('./auth');
 const qr = require('./qr'), mpesaLib = require('./mpesa'), paystackLib = require('./paystack'), registerFeatures = require('./features');
+const mail = require('./mail'); const { registerGrowth, attributeReferral } = require('./growth');
 
 function createApp(env = process.env) {
   const dbFile = env.DB_FILE || './data/skillforge.db';
@@ -24,104 +25,181 @@ function createApp(env = process.env) {
   const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...secHeaders, ...headers }); res.end(JSON.stringify(obj)); };
   const err = (res, code, msg) => send(res, code, { error: msg });
   const certificatePdf = (student, course, code, issued, verifyUrl) => {
+    const fs = require('fs');
+    const path = require('path');
     const safe = (v) => String(v || '').normalize('NFKD').replace(/[^\x20-\x7E]/g, '').replace(/([\\()])/g, '\\$1').slice(0, 100);
     const studentN = safe(student);
     const courseN = safe(course);
     const codeN = safe(code);
-    const dateN = safe(String(issued || '').slice(0, 10));
-    const stuX = Math.max(80, 421 - studentN.length * 7.2);
-    const courseX = Math.max(70, 421 - courseN.length * 5.2);
+
+    // Formal long date: 28 October 2026
+    let dateN = safe(String(issued || '').slice(0, 10));
+    try {
+      const d = new Date(issued || Date.now());
+      if (!isNaN(d.getTime())) {
+        dateN = safe(d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }));
+      }
+    } catch (_) {}
+
+    const stuX = Math.max(70, 421 - studentN.length * 7.2);
+    const courseX = Math.max(60, 421 - courseN.length * 5.2);
+
+    const assetsDir = path.join(__dirname, '..', 'public', 'assets');
+    const loadJpg = (name) => {
+      try {
+        const p = path.join(assetsDir, name);
+        if (fs.existsSync(p)) return fs.readFileSync(p);
+      } catch (_) {}
+      return null;
+    };
+    const sigJpg = loadJpg('signature-stive.jpg');
+    const sealJpg = loadJpg('certificate-seal.jpg');
+    const logoJpg = loadJpg('certificate-logo.jpg');
+
     let qrLines = [];
     try {
-      if (verifyUrl && qr && typeof qr.pdfOps === 'function') qrLines = qr.pdfOps(verifyUrl, 700, 52, 72);
+      if (verifyUrl && qr && typeof qr.pdfOps === 'function') qrLines = qr.pdfOps(verifyUrl, 705, 48, 68);
     } catch (_) {}
-    const lines = [
-      'q', '0.04 0.20 0.17 rg', '0 0 842 595 re f', 'Q',
-      'q', '0.99 0.98 0.95 rg', '28 28 786 539 re f', 'Q',
-      'q', '0.78 0.62 0.22 RG', '2.5 w', '38 38 766 519 re S', 'Q',
-      'q', '0.05 0.28 0.22 RG', '1.2 w', '48 48 746 499 re S', 'Q',
-      'q', '0.78 0.62 0.22 RG', '2 w',
-      '58 547 m 58 527 l 78 527 l S',
-      '784 547 m 784 527 l 764 527 l S',
-      '58 48 m 58 68 l 78 68 l S',
-      '784 48 m 784 68 l 764 68 l S', 'Q',
-      'BT /F1 11 Tf 0.45 0.38 0.18 rg 1 0 0 1 292 520 Tm (SKILLORA ACADEMY) Tj ET',
-      'BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 268 504 Tm (CERTIFICATE OF COMPLETION) Tj ET',
-      'BT /F2 36 Tf 0.04 0.20 0.17 rg 1 0 0 1 248 448 Tm (Certificate) Tj ET',
-      'BT /F2 28 Tf 0.04 0.20 0.17 rg 1 0 0 1 292 412 Tm (of Completion) Tj ET',
-      'BT /F1 12 Tf 0.32 0.38 0.34 rg 1 0 0 1 318 368 Tm (This certifies that) Tj ET',
-      'BT /F2 26 Tf 0.04 0.20 0.17 rg 1 0 0 1 ' + stuX + ' 328 Tm (' + studentN + ') Tj ET',
-      'q', '0.78 0.62 0.22 RG', '1.4 w', '160 318 m 682 318 l S', 'Q',
-      'BT /F1 12 Tf 0.32 0.38 0.34 rg 1 0 0 1 248 288 Tm (has successfully completed the course) Tj ET',
-      'BT /F2 18 Tf 0.04 0.20 0.17 rg 1 0 0 1 ' + courseX + ' 252 Tm (' + courseN + ') Tj ET',
-      'BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 120 198 Tm (Issued: ' + dateN + ') Tj ET',
-      'BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 420 198 Tm (Certificate ID: ' + codeN + ') Tj ET',
-      // Professional ink signature (vector stroke) + formal signatory
-      // Calligraphic pen signature for Stive Willman
-      'q', '0.08 0.12 0.14 RG', '2.1 w', '1 J', '1 j',
-      // Leading flourish into capital S
-      '108 128 m',
-      '118 148 125 155 135 145 c',
-      '145 135 140 118 130 122 c',
-      '122 125 125 140 140 142 c',
-      '155 144 165 135 170 125 c',
-      // t / i
-      '175 130 180 145 188 140 c',
-      '192 128 190 118 198 122 c',
-      // v e
-      '205 135 215 148 225 138 c',
-      '232 128 228 118 240 125 c',
-      '250 135 255 140 262 130 c',
-      // space + W
-      '270 118 275 150 285 148 c',
-      '295 146 298 125 305 130 c',
-      '312 140 318 150 328 140 c',
-      // i l l
-      '335 125 338 150 345 145 c',
-      '350 130 348 118 355 125 c',
-      '360 140 365 148 372 138 c',
-      // m a n flourish
-      '380 125 385 150 395 145 c',
-      '405 140 410 125 418 132 c',
-      '428 145 438 155 450 140 c',
-      '458 128 455 115 465 122 c',
-      'S', 'Q',
-      // underline flourish
-      'q', '0.08 0.12 0.14 RG', '1.15 w',
-      '115 112 m 130 108 200 106 280 110 c 340 113 400 108 455 105 c S',
-      'Q',
-      // small terminal stroke
-      'q', '0.08 0.12 0.14 RG', '1.4 w',
-      '430 148 m 445 160 458 135 468 142 c S',
-      'Q',
-      'q', '0.78 0.62 0.22 RG', '0.85 w', '110 98 m 360 98 l S', 'Q',
-      'BT /F2 12 Tf 0.04 0.20 0.17 rg 1 0 0 1 115 82 Tm (Stive Willman) Tj ET',
-      'BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 115 68 Tm (Director, Skillora Academy) Tj ET',
-      'BT /F1 8 Tf 0.40 0.45 0.42 rg 1 0 0 1 115 54 Tm (Authorized signature) Tj ET',
-      'BT /F1 8 Tf 0.35 0.42 0.38 rg 1 0 0 1 360 88 Tm (Official completion record) Tj ET',
-      'BT /F1 7 Tf 0.40 0.45 0.42 rg 1 0 0 1 320 74 Tm (Not an accredited professional qualification.) Tj ET'
-    ].concat(qrLines).concat(qrLines.length ? ['BT /F1 7 Tf 0.35 0.42 0.38 rg 1 0 0 1 708 44 Tm (Scan to verify) Tj ET'] : []);
-    const stream = Buffer.from(lines.join('\n'), 'latin1');
-    const objs = [
-      '<< /Type /Catalog /Pages 2 0 R >>',
-      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
-      '<< /Length ' + stream.length + ' >>\nstream\n' + stream.toString('latin1') + '\nendstream'
-    ];
-    let pdf = '%PDF-1.4\n%SFCA\n', offsets = [0];
-    for (let i = 0; i < objs.length; i++) {
-      offsets.push(Buffer.byteLength(pdf, 'latin1'));
-      pdf += (i + 1) + ' 0 obj\n' + objs[i] + '\nendobj\n';
+
+    // Build content stream
+    const parts = [];
+    parts.push('q', '0.04 0.20 0.17 rg', '0 0 842 595 re f', 'Q');
+    parts.push('q', '0.99 0.98 0.95 rg', '26 26 790 543 re f', 'Q');
+    parts.push('q', '0.78 0.62 0.22 RG', '2.8 w', '36 36 770 523 re S', 'Q');
+    parts.push('q', '0.05 0.28 0.22 RG', '1.15 w', '46 46 750 503 re S', 'Q');
+    // corner ornaments
+    parts.push('q', '0.78 0.62 0.22 RG', '2 w',
+      '56 549 m 56 528 l 78 528 l S',
+      '786 549 m 786 528 l 764 528 l S',
+      '56 46 m 56 67 l 78 67 l S',
+      '786 46 m 786 67 l 764 67 l S', 'Q');
+
+    // Logo top-center (if present) — drawn later via XObject; placeholder space for header
+    parts.push('BT /F1 10 Tf 0.45 0.38 0.18 rg 1 0 0 1 300 508 Tm (SKILLORA ACADEMY) Tj ET');
+    parts.push('BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 272 492 Tm (CERTIFICATE OF COMPLETION) Tj ET');
+    parts.push('BT /F2 34 Tf 0.04 0.20 0.17 rg 1 0 0 1 252 440 Tm (Certificate) Tj ET');
+    parts.push('BT /F2 26 Tf 0.04 0.20 0.17 rg 1 0 0 1 298 406 Tm (of Completion) Tj ET');
+    parts.push('BT /F1 12 Tf 0.32 0.38 0.34 rg 1 0 0 1 320 362 Tm (This certifies that) Tj ET');
+    parts.push('BT /F2 26 Tf 0.04 0.20 0.17 rg 1 0 0 1 ' + stuX + ' 322 Tm (' + studentN + ') Tj ET');
+    parts.push('q', '0.78 0.62 0.22 RG', '1.35 w', '155 312 m 687 312 l S', 'Q');
+    parts.push('BT /F1 12 Tf 0.32 0.38 0.34 rg 1 0 0 1 248 282 Tm (has successfully completed the course) Tj ET');
+    parts.push('BT /F2 17 Tf 0.04 0.20 0.17 rg 1 0 0 1 ' + courseX + ' 248 Tm (' + courseN + ') Tj ET');
+
+    // Date block — prominent
+    parts.push('BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 120 205 Tm (Date of issue) Tj ET');
+    parts.push('BT /F2 12 Tf 0.04 0.20 0.17 rg 1 0 0 1 120 188 Tm (' + dateN + ') Tj ET');
+    parts.push('BT /F1 10 Tf 0.32 0.38 0.34 rg 1 0 0 1 420 205 Tm (Certificate ID) Tj ET');
+    parts.push('BT /F2 11 Tf 0.04 0.20 0.17 rg 1 0 0 1 420 188 Tm (' + codeN + ') Tj ET');
+
+    // Signature image placement (XObject ImSig)
+    if (sigJpg) {
+      // 220x70 pts at bottom-left
+      parts.push('q', '220 0 0 68 100 95 cm', '/ImSig Do', 'Q');
     }
-    const xref = Buffer.byteLength(pdf, 'latin1');
-    pdf += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n';
-    for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
-    pdf += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF';
-    return Buffer.from(pdf, 'latin1');
+    parts.push('q', '0.78 0.62 0.22 RG', '0.8 w', '100 90 m 340 90 l S', 'Q');
+    parts.push('BT /F2 12 Tf 0.04 0.20 0.17 rg 1 0 0 1 100 74 Tm (Stive Willman) Tj ET');
+    parts.push('BT /F1 9 Tf 0.35 0.42 0.38 rg 1 0 0 1 100 60 Tm (Director, Skillora Academy) Tj ET');
+    parts.push('BT /F1 8 Tf 0.40 0.45 0.42 rg 1 0 0 1 100 46 Tm (Authorized signature) Tj ET');
+
+    // Seal image (XObject ImSeal) bottom-center-right
+    if (sealJpg) {
+      parts.push('q', '78 0 0 78 520 55 cm', '/ImSeal Do', 'Q');
+    }
+
+    // Logo small top
+    if (logoJpg) {
+      parts.push('q', '36 0 0 36 403 515 cm', '/ImLogo Do', 'Q');
+    }
+
+    parts.push('BT /F1 7 Tf 0.40 0.45 0.42 rg 1 0 0 1 300 42 Tm (Official completion record · Not an accredited professional qualification.) Tj ET');
+    if (qrLines.length) {
+      parts.push(...qrLines);
+      parts.push('BT /F1 7 Tf 0.35 0.42 0.38 rg 1 0 0 1 712 40 Tm (Scan to verify) Tj ET');
+    }
+
+    const stream = Buffer.from(parts.join('\n'), 'latin1');
+
+    // Assemble PDF with optional image objects
+    const objects = [];
+    objects.push('<< /Type /Catalog /Pages 2 0 R >>'); // 1
+    objects.push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'); // 2
+
+    // Page resources — build dynamically
+    const xobjs = [];
+    let nextId = 4; // 3 is page, fonts 4-5, content last-ish
+    // We'll assign fixed ids:
+    // 4 F1, 5 F2, 6 Contents, 7 ImSig, 8 ImSeal, 9 ImLogo
+    const imgObjs = [];
+    let resX = '';
+    if (sigJpg) {
+      imgObjs.push({ name: 'ImSig', id: 7, data: sigJpg, w: 900, h: 280 });
+      resX += '/ImSig 7 0 R ';
+    }
+    if (sealJpg) {
+      imgObjs.push({ name: 'ImSeal', id: 8, data: sealJpg, w: 420, h: 420 });
+      resX += '/ImSeal 8 0 R ';
+    }
+    if (logoJpg) {
+      imgObjs.push({ name: 'ImLogo', id: 9, data: logoJpg, w: 120, h: 120 });
+      resX += '/ImLogo 9 0 R ';
+    }
+
+    const pageDict = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << ' + resX + '>> >> /Contents 6 0 R >>';
+    objects.push(pageDict); // 3
+    objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'); // 4
+    objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'); // 5
+    objects.push('<< /Length ' + stream.length + ' >>\nstream\n' + stream.toString('latin1') + '\nendstream'); // 6
+
+    // Pad to ids 7,8,9 even if missing — only push existing with correct numbering
+    // Simpler: push images as objs 7+ in order we referenced
+    const byId = { 1: objects[0], 2: objects[1], 3: objects[2], 4: objects[3], 5: objects[4], 6: objects[5] };
+    for (const img of imgObjs) {
+      byId[img.id] = '<< /Type /XObject /Subtype /Image /Width ' + img.w + ' /Height ' + img.h +
+        ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.data.length +
+        ' >>\nstream\n';
+    }
+    // Build ordered object list 1..maxId
+    const maxId = Math.max(6, ...imgObjs.map(i => i.id));
+    const ordered = [];
+    for (let id = 1; id <= maxId; id++) {
+      if (byId[id]) ordered.push({ id, text: byId[id], bin: null });
+      else ordered.push({ id, text: '<< >>', bin: null }); // empty placeholder
+    }
+    // Attach binary for images
+    for (const img of imgObjs) {
+      const o = ordered[img.id - 1];
+      o.text = '<< /Type /XObject /Subtype /Image /Width ' + img.w + ' /Height ' + img.h +
+        ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.data.length +
+        ' >>\nstream\n';
+      o.bin = img.data;
+      o.end = '\nendstream';
+    }
+
+    let pdf = Buffer.from('%PDF-1.4\n%SFCA\n', 'latin1');
+    const offsets = [0];
+    for (const o of ordered) {
+      offsets.push(pdf.length);
+      let chunk = o.id + ' 0 obj\n' + o.text;
+      pdf = Buffer.concat([pdf, Buffer.from(chunk, 'latin1')]);
+      if (o.bin) {
+        pdf = Buffer.concat([pdf, o.bin, Buffer.from((o.end || '\nendstream') + '\nendobj\n', 'latin1')]);
+      } else {
+        pdf = Buffer.concat([pdf, Buffer.from('\nendobj\n', 'latin1')]);
+      }
+    }
+    const xref = pdf.length;
+    let xrefTable = 'xref\n0 ' + (ordered.length + 1) + '\n0000000000 65535 f \n';
+    for (let i = 1; i <= ordered.length; i++) {
+      xrefTable += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+    }
+    pdf = Buffer.concat([
+      pdf,
+      Buffer.from(xrefTable, 'latin1'),
+      Buffer.from('trailer\n<< /Size ' + (ordered.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF', 'latin1')
+    ]);
+    return pdf;
   };
-    const readBody = (req) => new Promise((ok, no) => { let b = ''; req.on('data', d => { b += d; if (b.length > 1e6) { req.destroy(); no(new Error('too large')); } }); req.on('end', () => ok(b)); });
+  const readBody = (req) => new Promise((ok, no) => { let b = ''; req.on('data', d => { b += d; if (b.length > 1e6) { req.destroy(); no(new Error('too large')); } }); req.on('end', () => ok(b)); });
   const cookie = (req, n) => ((req.headers.cookie || '').split(/;\s*/).find(c => c.startsWith(n + '=')) || '').slice(n.length + 1);
   const userOf = (req) => { const t = cookie(req, 'sid'); if (!t) return null; return db.prepare('SELECT u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.exp>? AND u.deleted_at IS NULL').get(t, Date.now()) || null; };
   const canRead = (u, courseId) => u && (u.role === 'admin' || db.prepare('SELECT 1 x FROM enrollments WHERE user_id=? AND course_id=?').get(u.id, courseId));
@@ -142,6 +220,8 @@ function createApp(env = process.env) {
       if (code) { const ref = db.prepare('SELECT referrer_id,code FROM referrals WHERE code=?').get(code); if (ref && ref.referrer_id !== uid) db.prepare('INSERT OR IGNORE INTO referral_attributions(referrer_id,referred_user_id,referral_code) VALUES(?,?,?)').run(ref.referrer_id,uid,ref.code); }
       db.prepare('INSERT OR IGNORE INTO learner_goals(user_id) VALUES(?)').run(uid);
       db.prepare('INSERT OR IGNORE INTO notification_preferences(user_id) VALUES(?)').run(uid);
+      try { attributeReferral(db, uid, code || c.body.ref || ''); } catch (_) {}
+      try { mail.welcome(env, { email: email.toLowerCase(), name }); } catch (_) {}
       newSession(c.res, uid, { ok: true });
     } catch { err(c.res, 409, 'Email already registered'); }
   });
@@ -205,7 +285,12 @@ function createApp(env = process.env) {
     if (!total || done < total) return err(c.res, 409, `Complete all lessons first (${done}/${total})`);
     const code = 'SF-' + crypto.randomBytes(6).toString('hex').toUpperCase();
     db.prepare('INSERT OR IGNORE INTO certificates(code,user_id,course_id) VALUES(?,?,?)').run(code, c.user.id, co.id);
-    send(c.res, 200, db.prepare('SELECT code FROM certificates WHERE user_id=? AND course_id=?').get(c.user.id, co.id));
+    const issued = db.prepare('SELECT code FROM certificates WHERE user_id=? AND course_id=?').get(c.user.id, co.id);
+    try {
+      const pdfUrl = (env.PUBLIC_URL || '').replace(/\/$/, '') + '/api/certificates/' + encodeURIComponent(issued.code) + '.pdf';
+      mail.certificateReady(env, { email: c.user.email, name: c.user.name }, { course: co.title, code: issued.code, url: pdfUrl });
+    } catch (_) {}
+    send(c.res, 200, issued);
   });
   R('GET', '/api/verify/:code', (c, code) => {
     const r = db.prepare('SELECT ce.code,ce.issued,u.name,co.title FROM certificates ce JOIN users u ON u.id=ce.user_id JOIN courses co ON co.id=ce.course_id WHERE ce.code=?').get(code);
@@ -223,7 +308,7 @@ function createApp(env = process.env) {
   // Shared by the signed webhook, the M-Pesa callback and status reconciliation. Idempotent.
   const settlePayment = (p, ref, status) => {
     db.prepare('UPDATE payments SET status=? WHERE ref=?').run(status, ref);
-    if (status === 'successful') { db.prepare('INSERT OR IGNORE INTO enrollments(user_id,course_id) VALUES(?,?)').run(p.user_id, p.course_id); const attr=db.prepare("SELECT * FROM referral_attributions WHERE referred_user_id=? AND status='registered'").get(p.user_id); const reward=Number(env.REFERRAL_REWARD_KES||0); if(attr && attr.referrer_id!==p.user_id && reward>0){ db.prepare("UPDATE referral_attributions SET status='qualified',qualifying_payment_ref=? WHERE id=?").run(ref,attr.id); db.prepare("INSERT OR IGNORE INTO reward_ledger(referral_id,referrer_id,amount_kes,payment_ref,reason) VALUES(?,?,?,?,?)").run(attr.id,attr.referrer_id,reward,ref,'Pending admin review after verified payment'); } }
+    if (status === 'successful') { db.prepare('INSERT OR IGNORE INTO enrollments(user_id,course_id) VALUES(?,?)').run(p.user_id, p.course_id); try { const u=db.prepare('SELECT email,name FROM users WHERE id=?').get(p.user_id); const co=db.prepare('SELECT title FROM courses WHERE id=?').get(p.course_id); if(u&&co) mail.paymentReceipt(env,u,{ref,amount:p.amount_kes,course:co.title}); } catch(_){}  const attr=db.prepare("SELECT * FROM referral_attributions WHERE referred_user_id=? AND status='registered'").get(p.user_id); const reward=Number(env.REFERRAL_REWARD_KES||0); if(attr && attr.referrer_id!==p.user_id && reward>0){ db.prepare("UPDATE referral_attributions SET status='qualified',qualifying_payment_ref=? WHERE id=?").run(ref,attr.id); db.prepare("INSERT OR IGNORE INTO reward_ledger(referral_id,referrer_id,amount_kes,payment_ref,reason) VALUES(?,?,?,?,?)").run(attr.id,attr.referrer_id,reward,ref,'Pending admin review after verified payment'); } }
     if (status === 'refunded') { db.prepare('DELETE FROM enrollments WHERE user_id=? AND course_id=?').run(p.user_id, p.course_id); db.prepare("UPDATE reward_ledger SET status='reversed',reason='Qualifying payment refunded',updated=CURRENT_TIMESTAMP WHERE payment_ref=? AND status IN ('pending','approved')").run(ref); db.prepare("UPDATE referral_attributions SET status='rejected',reviewed=CURRENT_TIMESTAMP WHERE qualifying_payment_ref=?").run(ref); }
   };
   // Payments: pending record is created server-side; access is granted ONLY by a signed webhook.
@@ -776,6 +861,8 @@ R('GET', '/api/admin/payments', admin((c) => send(c.res, 200, db.prepare('SELECT
   }));
 
   const features = registerFeatures({ R, db, send, err, mustUser, admin, audit, env, limited, dbFile });
+  registerGrowth({ R, db, send, err, mustUser, admin, env, audit });
+
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://x');

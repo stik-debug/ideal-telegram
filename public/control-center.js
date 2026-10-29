@@ -85,6 +85,7 @@
     { id: 'cc-tools', label: 'Owner tools', group: 'System' },
     { id: 'cc-audit', label: 'Audit log', group: 'System' },
     { id: 'cc-deleted', label: 'Closed accounts', group: 'System' },
+    { id: 'cc-revenue', label: 'Revenue', group: 'Money' },
     { id: 'cc-dbpay', label: 'Database & payments', group: 'System' },
   ];
 
@@ -366,6 +367,35 @@
           } catch (e) { toast(e.message, true); }
         };
       });
+    }
+
+    
+    if (!q('#cc-revenue', main)) {
+      const sec = document.createElement('section');
+      sec.id = 'cc-revenue';
+      sec.className = 'cc-section-card';
+      sec.hidden = true;
+      sec.innerHTML = '<div class="cc-section-head"><h2>Revenue</h2><p>Successful payments. All sales are final — no refunds.</p></div><div id="cc-revenue-body">Loading…</div>';
+      main.appendChild(sec);
+      (async () => {
+        try {
+          const r = await api('/admin/revenue');
+          const el = q('#cc-revenue-body', sec);
+          el.innerHTML = `<div class="cc-metric-grid">
+            <article class="cc-metric"><span>Today</span><strong>KSh ${fmt(r.today.kes)}</strong><small>${fmt(r.today.n)} payments</small></article>
+            <article class="cc-metric"><span>This month</span><strong>KSh ${fmt(r.month.kes)}</strong><small>${fmt(r.month.n)} payments</small></article>
+            <article class="cc-metric"><span>All time</span><strong>KSh ${fmt(r.total.kes)}</strong><small>${fmt(r.total.n)} payments</small></article>
+            <article class="cc-metric"><span>Pending</span><strong>KSh ${fmt(r.pending.kes)}</strong><small>${fmt(r.pending.n)} open</small></article>
+          </div>
+          <p class="muted" style="margin-top:12px">${esc(r.policy||'')}</p>
+          <p style="margin-top:12px"><a class="course-open" href="/api/admin/revenue.csv">Download CSV export</a>
+          <a class="course-open" style="margin-left:8px" href="/api/admin/backup/download">Download database backup</a></p>
+          <div class="cc-table-wrap" style="margin-top:14px"><table class="cc-table"><thead><tr><th>Ref</th><th>Amount</th><th>Status</th><th>Email</th><th>Course</th></tr></thead>
+          <tbody>${(r.recent||[]).map(p=>`<tr><td>${esc(p.ref)}</td><td>KSh ${fmt(p.amount_kes)}</td><td>${esc(p.status)}</td><td>${esc(p.email)}</td><td>${esc(p.course)}</td></tr>`).join('')}</tbody></table></div>`;
+        } catch (e) {
+          q('#cc-revenue-body', sec).textContent = e.message;
+        }
+      })();
     }
 
     if (!q('#cc-dbpay', main)) {

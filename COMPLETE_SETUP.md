@@ -1,95 +1,54 @@
-# Skillora — complete setup (Render)
+# Skillora Academy — complete setup
 
-## 1. Keep accounts after deploy (required)
-
-This app uses **SQLite**. Render Postgres is **not** connected.
-
-1. Web Service → **Disks** → Add disk  
-   - Mount path: `/var/data`  
-   - Size: 1 GB  
-2. Environment:
-
-```text
-DB_FILE=/var/data/skillora.db
-COOKIE_SECURE=true
-PUBLIC_URL=https://YOUR-APP.onrender.com
-NODE_VERSION=22.14.0
-OWNER_EMAIL=you@example.com
-OWNER_PASSWORD=at-least-10-characters
-OWNER_NAME=Your Name
-```
-
-Without the disk, logins reset on every deploy.
-
----
-
-## 2. Paystack (card payments)
-
-```text
-PAYSTACK_SECRET_KEY=sk_live_or_test_...
-PAYSTACK_PUBLIC_KEY=pk_live_or_test_...
-PUBLIC_URL=https://YOUR-APP.onrender.com
-```
-
-Paystack Dashboard → Webhook URL:
-
-```text
-https://YOUR-APP.onrender.com/api/webhooks/paystack
-```
-
-**Learner flow:** Course → **Pay with card (Paystack)** → Paystack page → return → course unlocks.
-
----
-
-## 3. M-Pesa (optional)
-
-```text
-MPESA_ENV=sandbox
-MPESA_CONSUMER_KEY=...
-MPESA_CONSUMER_SECRET=...
-MPESA_SHORTCODE=...
-MPESA_PASSKEY=...
-MPESA_CALLBACK_SECRET=long-random-string
-PUBLIC_URL=https://YOUR-APP.onrender.com
-```
-
-Callback URL (automatic from app):
-
-```text
-https://YOUR-APP.onrender.com/api/webhooks/mpesa/YOUR_CALLBACK_SECRET
-```
-
----
-
-## 4. What works in the product
-
-| Feature | Status |
-|---------|--------|
-| Register / login | Yes |
-| Data on persistent disk | Yes if `DB_FILE=/var/data/...` |
-| Free course enrol | Yes |
-| Paystack card checkout | Yes when keys set |
-| M-Pesa STK | Yes when Daraja keys set |
-| Course lessons + quizzes | Yes |
-| Certificates PDF | Yes |
-| Control Center | Yes (admin) |
-| Learning Hub | Yes |
-| Owner bootstrap from env | Yes |
-
----
-
-## 5. Render service settings
-
+## Render
 | Setting | Value |
 |---------|--------|
+| NODE_VERSION | 22.14.0 |
 | Build | `echo ok` |
 | Start | `npm start` |
 | Root Directory | empty |
 
----
+## Required env
+```text
+NODE_VERSION=22.14.0
+DB_FILE=/var/data/skillora.db
+COOKIE_SECURE=true
+PUBLIC_URL=https://YOUR-APP.onrender.com
+OWNER_EMAIL=you@example.com
+OWNER_PASSWORD=at-least-10-characters
+OWNER_NAME=Your Name
+PAYSTACK_SECRET_KEY=sk_...
+PAYSTACK_PUBLIC_KEY=pk_...
+```
 
-## 6. First login after disk
+## Persistent disk
+Mount `/var/data` → `DB_FILE=/var/data/skillora.db`
 
-Use `OWNER_EMAIL` / `OWNER_PASSWORD`.  
-Open **Control Center** → Database & payments → confirm Paystack **Ready**.
-'''
+## Email (recommended)
+```text
+RESEND_API_KEY=re_...
+MAIL_FROM=Skillora Academy <you@yourdomain.com>
+ALERT_EMAIL=you@example.com
+```
+Without Resend, emails log to the server console (password reset links appear in logs).
+
+## Paystack webhook
+```text
+https://YOUR-APP.onrender.com/api/webhooks/paystack
+```
+
+## Features included
+- Paid courses + Paystack / M-Pesa
+- **No refunds** (payment policy page)
+- Welcome, payment receipt, certificate, password-reset emails
+- Password forgot / reset
+- Privacy, Terms, Payment policy, Contact
+- Owner revenue dashboard + CSV export
+- Database backup download
+- Continue learning + progress %
+- Course reviews (1–5 stars)
+- Referral invite links
+- Homepage testimonials
+- YouTube video embeds in lessons
+- Certificates (Stive Willman signature)
+- Control Center
